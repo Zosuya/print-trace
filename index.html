@@ -150,6 +150,8 @@
   #drop b { color:var(--cy); font-size:20px; letter-spacing:.3em; }
   #drop.hl { background:rgba(77,226,255,.05); outline:1px dashed var(--cy); outline-offset:-20px; }
   .hide { display:none !important; }
+  /* 上方按鈕精簡：功能改用鍵盤（S 顯示設定、F 跟隨噴頭），檔案用拖的 */
+  #openBtn, #setBtn, #followBtn, #replayBtn { display:none !important; }
   /* 列印完成 */
   #done { left:50%; bottom:28px; transform:translate(-50%, 30px); opacity:0; pointer-events:none; min-width:520px; padding:18px 26px 20px;
     transition:opacity .8s ease, transform .8s cubic-bezier(.2,.8,.2,1); border-color:rgba(94,242,160,.35); }
@@ -1554,6 +1556,7 @@ $('ctl').onclick = e => { const r = e.target.dataset.r; if (!r) return; rate = +
 addEventListener('keydown', e => {
   if (!data || e.target.tagName === 'SELECT') return;
   if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
+  if (e.code === 'KeyS') $('setBtn').click();
   if (e.code === 'ArrowRight') setTime(t + (e.shiftKey ? 60 : 5));
   if (e.code === 'ArrowLeft') setTime(t - (e.shiftKey ? 60 : 5));
   if (e.code === 'ArrowUp') { const l = Math.min(data.layers.length - 1, curLayer() + 1); if (layerStart[l] !== undefined) setTime(layerStart[l] + 0.01); }
@@ -1640,6 +1643,7 @@ function onLiveStatus(s) {
   if (p.mc_percent !== live.pct) { live.pct = p.mc_percent; live.pctAt = now; }
   // 狀態標示
   const b = $('liveBadge'); b.classList.remove('hide');
+  b.classList.toggle('hide', !!s.connected);   // 只有斷線時才顯示
   b.innerHTML = s.connected ? `<span style="color:${p.gcode_state === 'RUNNING' ? '#5ef2a0' : p.gcode_state === 'PAUSE' || p.gcode_state === 'FAILED' ? '#ff5d5d' : '#ffb547'}">●</span> ${s.sim ? 'SIM' : 'LIVE'}　${STATE_ZH[p.gcode_state] || p.gcode_state || '—'}`
     : '<span style="color:#ff5d5d">●</span> 印表機未連線';
   if (!data) idleScreen(s);
@@ -1748,7 +1752,7 @@ async function startLive() {
     try { const buf = await (await fetch(f.url)).arrayBuffer(); await openBuffer(buf, f.name); live.ref = null; live.lastLine = -1; setLiveFollow(true); }
     catch (err) { console.error('讀不了印表機的檔案', err); }
   });
-  es.onerror = () => { $('liveBadge').innerHTML = '<span style="color:#ff5d5d">●</span> 後端未連線'; };
+  es.onerror = () => { $('liveBadge').classList.remove('hide'); $('liveBadge').innerHTML = '<span style="color:#ff5d5d">●</span> 後端未連線'; };
 }
 // 使用者自己拖時間軸、量尺或按方向鍵 → 暫停跟隨，出現「回到即時」
 for (const id of ['track', 'lg']) $(id).addEventListener('pointerdown', () => { if (live.on) setLiveFollow(false); }, true);

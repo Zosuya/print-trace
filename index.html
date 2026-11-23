@@ -149,7 +149,7 @@
   #drop.hl { background:rgba(77,226,255,.05); outline:1px dashed var(--cy); outline-offset:-20px; }
   .hide { display:none !important; }
   /* 即時模式不需要底部時間軸，下方面板往下貼齊 */
-  body.live #dock { display:none; }
+  body.live #dock, body.live #lg { display:none !important; }
   body.live #tele, body.live #term { bottom:16px; }
   @media (max-width: 700px) { body.live #prog { bottom:16px; } body.live #tele { bottom:136px; } }
   /* 窄畫面（例如嵌在 Orca 的攝影機格、手機）：收掉次要面板 */

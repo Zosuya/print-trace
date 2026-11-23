@@ -1,0 +1,1528 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PRINT//TRACE</title>
+<style>
+  :root {
+    --bg:#05080c; --cy:#4de2ff; --cy2:rgba(77,226,255,.55); --cy3:rgba(77,226,255,.18); --cy4:rgba(77,226,255,.07);
+    --amb:#ffb547; --hot:#ff5d5d; --ok:#5ef2a0; --fg:#d8f6ff; --dim:#6f8796; --dim2:#3c4c58;
+    --mono: "SF Mono", ui-monospace, Menlo, "PingFang TC", monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--fg);
+    font:12px/1.4 -apple-system,"PingFang TC",system-ui,sans-serif; -webkit-font-smoothing:antialiased; user-select:none; -webkit-user-select:none; }
+  #view { position:fixed; inset:0;
+    background: radial-gradient(ellipse at 50% 40%, #0d1822 0%, #070b10 55%, #030507 100%); }
+  canvas#gl { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  /* 掃描線與暗角 */
+  #fx { position:absolute; inset:0; pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .tag { font:600 9.5px/1 var(--mono); letter-spacing:.16em; color:var(--dim); text-transform:uppercase; }
+
+  /* HUD 面板：半透明 + 四角括號 */
+  .pane { position:absolute; padding:12px 14px; background:linear-gradient(180deg, rgba(10,20,28,.62), rgba(6,12,18,.5));
+    border:1px solid var(--cy3); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+  .pane::before, .pane::after { content:""; position:absolute; width:10px; height:10px; border:1.5px solid var(--cy); pointer-events:none; }
+  .pane::before { top:-1px; left:-1px; border-right:none; border-bottom:none; }
+  .pane::after { bottom:-1px; right:-1px; border-left:none; border-top:none; }
+  .pane .hd { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+  .pane .hd .tag { color:var(--cy); }
+  .pane .hd .ln { flex:1; height:1px; background:linear-gradient(90deg, var(--cy3), transparent); }
+
+  /* 左上：檔案資訊 */
+  #brand { top:16px; left:16px; display:flex; gap:12px; align-items:center; padding:10px 14px 10px 10px; }
+  #thumb { width:54px; height:54px; object-fit:contain; background:rgba(77,226,255,.05); border:1px solid var(--cy3); }
+  #brand .t1 { font:700 13px/1 var(--mono); letter-spacing:.18em; color:var(--cy); }
+  #brand .t1 i { font-style:normal; color:var(--dim); }
+  #brand .t2 { font-size:15px; font-weight:600; margin:5px 0 4px; }
+  #brand .t3 { color:var(--dim); font:11px/1.3 var(--mono); }
+
+  /* 右上：進度環 */
+  #prog { top:16px; right:16px; display:flex; gap:14px; align-items:center; padding:12px 16px; }
+  #ring { width:92px; height:92px; position:relative; }
+  #ring svg { transform:rotate(-90deg); }
+  #ring .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #ring .pct b { font:600 21px/1 var(--mono); color:var(--fg); }
+  #ring .pct span { font:9px/1 var(--mono); color:var(--dim); letter-spacing:.14em; margin-top:4px; }
+  #prog .kv { display:grid; grid-template-columns:auto auto; gap:3px 14px; align-items:baseline; }
+  #prog .kv .v { font:500 15px/1.2 var(--mono); text-align:right; }
+  #prog .kv .v.big { font-size:22px; color:var(--cy); }
+  #prog .kv .v small { color:var(--dim); font-size:11px; }
+
+  /* 左中：即時數據 */
+  #tele { bottom:96px; right:16px; width:282px; }
+  #tele .feat { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; margin-bottom:10px; }
+  #tele .feat i { width:9px; height:9px; box-shadow:0 0 10px currentColor; background:currentColor; }
+  #tele .spd { display:flex; align-items:baseline; gap:6px; }
+  #tele .spd b { font:300 44px/1 var(--mono); letter-spacing:-.02em; }
+  #tele .spd span { color:var(--dim); font:12px var(--mono); }
+  #tele .bars { margin:8px 0 10px; display:grid; gap:5px; }
+  #tele .bar { display:grid; grid-template-columns:62px 1fr 64px; align-items:center; gap:8px; }
+  #tele .bar .tr { height:4px; background:var(--cy4); position:relative; overflow:hidden; }
+  #tele .bar .tr div { position:absolute; inset:0 auto 0 0; background:var(--cy); box-shadow:0 0 8px var(--cy); }
+  #tele .bar .tr.amb div { background:var(--amb); box-shadow:0 0 8px var(--amb); }
+  #tele .bar .v { text-align:right; font:11px var(--mono); }
+  #spark { width:100%; height:52px; display:block; border-top:1px solid var(--cy4); border-bottom:1px solid var(--cy4); }
+  #tele .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+  #tele .grid3 .v { font:500 13px/1.3 var(--mono); }
+
+  /* 右側：準備流程 / 圖例 + 層數量尺 */
+  #side { top:136px; right:16px; width:262px; }
+  .step { display:grid; grid-template-columns:16px 1fr auto; gap:8px; align-items:center; padding:4px 0; color:var(--dim2); font-size:12.5px; }
+  .step .ic { font:11px var(--mono); text-align:center; }
+  .step .d { font:10.5px var(--mono); }
+  .step.done { color:var(--dim); } .step.done .ic { color:var(--ok); }
+  .step.cur { color:var(--fg); font-weight:600; } .step.cur .ic { color:var(--amb); animation:blink 1s steps(2) infinite; }
+  .step.cur .d { color:var(--amb); }
+  .sbar { height:2px; background:var(--cy4); margin:1px 0 4px 24px; } .sbar div { height:100%; background:var(--amb); box-shadow:0 0 6px var(--amb); }
+  .cd { display:flex; align-items:baseline; justify-content:space-between; margin:-2px 0 10px; padding-bottom:8px; border-bottom:1px solid var(--cy4); }
+  .cd b { font:300 30px/1 var(--mono); color:var(--amb); letter-spacing:.02em; text-shadow:0 0 10px rgba(255,181,71,.35); }
+  .temps { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
+  .temp { border:1px solid var(--cy3); padding:7px 9px; background:rgba(255,93,93,.03); }
+  .temp b { display:block; font:300 24px/1.1 var(--mono); color:var(--fg); }
+  .temp b small { font-size:12px; color:var(--dim); }
+  .waiting { margin-top:10px; font:11px var(--mono); color:var(--amb); letter-spacing:.04em; animation:blink 1.4s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity:.35; } }
+  .leg { display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; }
+  .leg div { display:flex; align-items:center; gap:7px; color:#b6cfdb; font-size:11.5px; }
+  .leg i { width:8px; height:8px; flex:none; }
+  .grad { height:6px; margin:4px 0 3px; } .gl { display:flex; justify-content:space-between; font:10px var(--mono); color:var(--dim); }
+
+  #lgauge { position:absolute; right:16px; top:50%; height:0; }
+  #lg { position:absolute; right:22px; width:30px; top:150px; bottom:330px; cursor:ns-resize; }
+  #lg .rail { position:absolute; left:13px; width:4px; top:0; bottom:0; background:repeating-linear-gradient(0deg, var(--cy3) 0 1px, transparent 1px 6px); }
+  #lg .fill { position:absolute; left:13px; width:4px; bottom:0; background:linear-gradient(0deg, rgba(77,226,255,.25), var(--cy)); box-shadow:0 0 10px var(--cy2); }
+  #lg .mk { position:absolute; right:22px; transform:translateY(50%); font:600 11px var(--mono); color:var(--cy); white-space:nowrap; }
+  #lg .mk::after { content:""; position:absolute; right:-14px; top:50%; width:12px; height:1px; background:var(--cy); }
+  #lg .top, #lg .bot { position:absolute; right:22px; font:9px var(--mono); color:var(--dim); }
+  #lg .top { top:-4px; } #lg .bot { bottom:-4px; }
+
+  /* 噴頭標籤 */
+  #lead { position:absolute; inset:0; pointer-events:none; overflow:visible; }
+  #callout { position:absolute; pointer-events:none; padding:5px 9px; border:1px solid var(--cy2); background:rgba(4,10,16,.78);
+    font:11px/1.35 var(--mono); white-space:nowrap; }
+  #callout b { color:var(--cy); font-weight:600; }
+
+  /* 左下：G-code 串流 */
+  #term { left:16px; bottom:96px; width:360px; padding:10px 12px; }
+  #code { font:11px/1.6 var(--mono); white-space:pre; overflow:hidden; color:var(--dim2); }
+  #code .c { color:var(--cy); background:rgba(77,226,255,.08); display:block; margin:0 -12px; padding:0 12px; border-left:2px solid var(--cy); }
+  #code .n { color:#2e3d48; display:inline-block; width:50px; }
+  #code .c .n { color:var(--cy2); }
+
+  /* 底部時間軸 */
+  #dock { left:16px; right:16px; bottom:16px; padding:10px 14px 12px; display:grid; grid-template-columns:auto 1fr auto; gap:6px 14px; align-items:center; }
+  #play { width:38px; height:38px; border:1px solid var(--cy2); background:rgba(77,226,255,.06); color:var(--cy); font-size:14px; cursor:pointer; grid-row:span 2; }
+  #play:hover { background:rgba(77,226,255,.16); }
+  #track { position:relative; height:22px; cursor:pointer; touch-action:none; }
+  #segs { position:absolute; left:0; right:0; top:9px; height:4px; background:var(--cy4); }
+  #segs div { position:absolute; top:0; bottom:0; opacity:.9; }
+  #fill { position:absolute; left:0; top:9px; height:4px; background:var(--cy); box-shadow:0 0 10px var(--cy); opacity:.85; }
+  #head { position:absolute; top:2px; width:2px; height:18px; background:#fff; box-shadow:0 0 8px var(--cy); transform:translateX(-1px); }
+  #ticks { position:absolute; left:0; right:0; top:16px; height:4px; }
+  #ticks div { position:absolute; width:1px; height:4px; background:var(--dim2); }
+  .trow { display:flex; justify-content:space-between; font:10.5px var(--mono); color:var(--dim); }
+  .trow b { color:var(--fg); font-weight:500; }
+  #ctl { display:flex; gap:4px; grid-row:span 2; align-items:center; }
+  .btn { border:1px solid var(--cy3); background:transparent; color:var(--dim); font:11px var(--mono); padding:5px 7px; cursor:pointer; }
+  .btn:hover { color:var(--fg); border-color:var(--cy2); }
+  .btn.on { color:#001018; background:var(--cy); border-color:var(--cy); }
+
+  /* 設定選單 */
+  #menu { top:16px; right:16px; display:none; }
+  #gear { position:absolute; top:16px; right:16px; }
+  #settings { position:absolute; top:150px; left:50%; transform:translateX(-50%); width:280px; display:none; z-index:5; }
+  #settings label { display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; color:#b6cfdb; }
+  ::selection { background:transparent; }
+  #settings select { width:100%; margin:4px 0 8px; background:#081118; color:var(--fg); border:1px solid var(--cy3); padding:5px; font:12px var(--mono); }
+  #settings input[type=checkbox] { accent-color:var(--cy); }
+  #topbtns { position:absolute; top:16px; left:50%; transform:translateX(-50%); display:flex; gap:6px; }
+
+  #drop { position:absolute; inset:0; display:flex; flex-direction:column; gap:10px; align-items:center; justify-content:center; color:var(--dim); font:13px var(--mono); letter-spacing:.1em; }
+  #drop b { color:var(--cy); font-size:20px; letter-spacing:.3em; }
+  #drop.hl { background:rgba(77,226,255,.05); outline:1px dashed var(--cy); outline-offset:-20px; }
+  .hide { display:none !important; }
+  .zlab { position:absolute; pointer-events:none; transform:translate(-50%,-100%); font:9.5px/1.4 var(--mono); letter-spacing:.12em; color:rgba(77,226,255,.55); white-space:nowrap; text-align:center; transition:color .3s; }
+  .zlab.on { color:var(--amb); text-shadow:0 0 8px rgba(255,181,71,.6); font-weight:600; }
+  .anno { position:absolute; pointer-events:none; font:9.5px/1.45 var(--mono); letter-spacing:.14em; color:var(--cy); text-transform:uppercase; white-space:nowrap; transform:translate(-50%,-100%); text-align:center; }
+  .anno span { display:block; color:var(--dim); letter-spacing:.06em; font-size:9px; text-transform:none; }
+  .chip { display:inline-block; width:10px; height:10px; border:1px solid rgba(255,255,255,.35); vertical-align:-1px; margin-right:4px; }
+  .fils { margin-top:5px; display:flex; gap:8px; flex-wrap:wrap; font:10.5px var(--mono); color:var(--dim); }
+  #tcBadge { color:var(--amb); }
+  /* 開場 */
+  #hudRoot > * { transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
+  #hudRoot.intro > * { opacity:0; pointer-events:none; }
+  #hudRoot.intro > #brand, #hudRoot.intro > #tele, #hudRoot.intro > #term { transform:translateX(-24px); }
+  #hudRoot.intro > #prog, #hudRoot.intro > #side, #hudRoot.intro > #lg { transform:translateX(24px); }
+  #hudRoot.intro > #dock { transform:translateY(24px); }
+  #hudRoot > #tele, #hudRoot > #side { transition-delay:.12s; } #hudRoot > #term, #hudRoot > #lg { transition-delay:.24s; } #hudRoot > #dock { transition-delay:.34s; }
+  #hudRoot.intro > * { transition-delay:0s !important; }
+  #introTxt { position:absolute; left:50%; bottom:64px; transform:translateX(-50%); text-align:center; font:11px/1.7 var(--mono);
+    letter-spacing:.28em; color:var(--cy); pointer-events:none; transition:opacity .5s; text-shadow:0 0 8px rgba(77,226,255,.6); }
+  #introTxt b { display:block; font-size:22px; letter-spacing:.12em; color:var(--fg); font-weight:300; }
+  #introTxt .sk { color:var(--dim); letter-spacing:.1em; margin-top:6px; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./lib/three.module.js", "three/addons/": "./lib/" } }
+</script>
+</head>
+<body>
+<div id="view">
+  <canvas id="gl"></canvas>
+  <div id="fx"></div>
+  <div id="annoBox"></div><div id="zoneBox"></div>
+  <svg id="lead"><g id="annoLines"></g><line id="leadL" stroke="#4de2ff" stroke-opacity=".7" stroke-width="1"/><circle id="leadC" r="3" fill="none" stroke="#4de2ff"/></svg>
+  <div id="callout" class="hide"></div>
+  <div id="introTxt" style="opacity:0"></div>
+
+  <div id="drop"><b>PRINT//TRACE</b>把 .gcode.3mf 或 .gcode 拖進來<button class="btn" onclick="document.getElementById('file').click()">選擇檔案</button></div>
+  <input type="file" id="file" accept=".3mf,.gcode,.gco" class="hide">
+
+  <div id="hudRoot" class="hide">
+    <div id="brand" class="pane">
+      <img id="thumb" alt="">
+      <div>
+        <div class="t1">PRINT<i>//</i>TRACE</div>
+        <div class="t2" id="fname">—</div>
+        <div class="t3" id="spec">—</div>
+      </div>
+    </div>
+
+    <div id="topbtns">
+      <button class="btn" id="openBtn">開啟檔案</button>
+      <button class="btn" id="setBtn">顯示設定</button>
+      <button class="btn" id="followBtn">跟隨噴頭 F</button>
+      <button class="btn" id="replayBtn">重播開場</button>
+    </div>
+
+    <div id="prog" class="pane">
+      <div id="ring">
+        <svg width="92" height="92"><circle cx="46" cy="46" r="40" fill="none" stroke="rgba(77,226,255,.1)" stroke-width="4"/>
+          <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(77,226,255,.12)" stroke-width="10" stroke-dasharray="1 5.28"/>
+          <circle id="arc" cx="46" cy="46" r="40" fill="none" stroke="#4de2ff" stroke-width="4" stroke-linecap="butt" style="filter:drop-shadow(0 0 4px #4de2ff)"/></svg>
+        <div class="pct"><b id="pct">0%</b><span>PROGRESS</span></div>
+      </div>
+      <div class="kv">
+        <span class="tag">層 LAYER</span><span class="v big" id="kLayer">0<small>/0</small></span>
+        <span class="tag">已過 ELAPSED</span><span class="v" id="kEl">0:00</span>
+        <span class="tag">剩餘 REMAIN</span><span class="v" id="kRem">0:00</span>
+        <span class="tag">完成 ETA</span><span class="v" id="kEta">--:--</span>
+      </div>
+    </div>
+
+    <div id="tele" class="pane">
+      <div class="hd"><span class="tag">即時數據 TELEMETRY</span><span class="ln"></span></div>
+      <div class="feat" id="feat"><i></i><span>—</span></div>
+      <div class="spd"><b id="spd">0</b><span>mm/s　估算</span></div>
+      <div class="bars">
+        <div class="bar"><span class="tag">設定 F</span><div class="tr"><div id="bF"></div></div><span class="v" id="vF">0</span></div>
+        <div class="bar"><span class="tag">加速度</span><div class="tr amb"><div id="bA"></div></div><span class="v" id="vA">0</span></div>
+      </div>
+      <div class="grid3">
+        <div><div class="tag">X</div><div class="v" id="pX">0</div></div>
+        <div><div class="tag">Y</div><div class="v" id="pY">0</div></div>
+        <div><div class="tag">Z</div><div class="v" id="pZ">0</div></div>
+      </div>
+    </div>
+
+    <div id="side" class="pane"></div>
+    <div id="lg"><div class="rail"></div><div class="fill" id="lgFill"></div><div class="mk" id="lgMk"></div><div class="top" id="lgTop"></div><div class="bot">L0</div></div>
+
+    <div id="term" class="pane">
+      <div class="hd"><span class="tag">G-CODE 串流</span><span class="ln"></span><span class="tag" id="termPos"></span></div>
+      <div id="code"></div>
+    </div>
+
+    <div id="dock" class="pane">
+      <button id="play">▶</button>
+      <div class="trow"><span id="stageNow">—</span><span><b id="tNow">0:00</b> / <span id="tTot">0:00</span></span></div>
+      <div id="ctl"></div>
+      <div id="track"><div id="segs"></div><div id="ticks"></div><div id="fill"></div><div id="head"></div></div>
+    </div>
+
+    <div id="settings" class="pane">
+      <div class="hd"><span class="tag">顯示設定</span><span class="ln"></span></div>
+      <div class="tag">顯示方式</div>
+      <select id="renderMode">
+        <option value="wire">線框</option>
+        <option value="holo">全息</option>
+        <option value="solid">實體線條</option>
+        <option value="cloud">點雲</option>
+      </select>
+      <div class="tag">上色方式</div>
+      <select id="colorMode">
+        <option value="feature">線條類型</option>
+        <option value="filament">模型顏色</option>
+      </select>
+      <label><input type="checkbox" id="showGhost" checked> 顯示還沒印的部分</label>
+      <label><input type="checkbox" id="dimPast" checked> 已完成的層調暗</label>
+      <label><input type="checkbox" id="showTravel"> 顯示空跑路徑</label>
+      <label><input type="checkbox" id="showStart"> 列印中也顯示起始程序</label>
+      <label><input type="checkbox" id="showCall" checked> 噴頭旁的標籤</label>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = id => document.getElementById(id);
+const fmtT = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (h ? h + ':' + String(m).padStart(2,'0') : m) + ':' + String(x).padStart(2,'0'); };
+
+// ---------- 讀 zip（.gcode.3mf），不用外部套件 ----------
+async function readZip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) throw new Error('不是 zip 檔');
+  const n = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true);
+  const files = {};
+  for (let k = 0; k < n; k++) {
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl));
+    p += 46 + nl + xl + cl;
+    files[name] = async () => {
+      const ds = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+      const raw = u8.slice(ds, ds + csize);
+      if (method === 0) return raw;
+      if (method !== 8) throw new Error('不支援的壓縮方式 ' + method);
+      const s = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Uint8Array(await new Response(s).arrayBuffer());
+    };
+  }
+  return files;
+}
+
+// ---------- 解析 G-code ----------
+// 每一段移動：起點、終點、是否擠出、特徵、線寬、層高、F、加速度、時間
+function parseGcode(text) {
+  const lines = text.split('\n');
+  const moves = [];
+  const meta = { header: {}, config: {} };
+  const anchors = [];                 // [移動索引, 切片軟體的進度 %]
+  let x = 0, y = 0, z = 0, f = 3000, acc = 5000;
+  let absXYZ = true, absE = true, lastE = 0;
+  let feature = '起始程序', width = 0.45, lh = 0.2, layer = 0, layerZ = 0;
+  let stage = -1, tn = 0, tb = 0;     // 準備步驟代碼、噴嘴／熱床目標溫度
+  let tool = 0, inTC = false, tagged = 0;  // 目前線材（T 編號）、是否在換料中
+  const sections = [], secStack = []; let g29 = null;   // 起始程序的段落（;===== xxx =====）與調平範圍
+  const toolChanges = [];
+  const stages = [];
+  const layers = [{ z: 0, h: 0 }];
+
+  const num = (s, key) => { const m = s.match(new RegExp('(?:^|\\s)' + key + '(-?[\\d.]+)')); return m ? parseFloat(m[1]) : undefined; };
+
+  function push(nx, ny, nz, e, line) {
+    const dx = nx - x, dy = ny - y, dz = nz - z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-6 && !e) { x = nx; y = ny; z = nz; return; }
+    const extrude = e > 1e-5 && Math.hypot(dx, dy) > 1e-6;
+    moves.push({ x0: x, y0: y, z0: z, x1: nx, y1: ny, z1: nz, len, e, extrude,
+      feature: extrude ? feature : '空跑', width, h: lh, layer, f, acc, line,
+      // 只有 E（回抽）時用 E 的長度算時間
+      elen: len < 1e-6 ? Math.abs(e) : 0, stage, tn, tb });
+    x = nx; y = ny; z = nz;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    for (; tagged < moves.length; tagged++) { moves[tagged].tool = tool; moves[tagged].tc = inTC; moves[tagged].sec = secStack.length ? secStack[secStack.length - 1] : -1; }
+    const raw = lines[i];
+    if (raw.startsWith(';')) {
+      let m;
+      if (layer === 0 && (m = raw.match(/^;\s*={3,}\s*(.+?)\s*=*\s*$/)) && !/^(machine|date)\s*:/i.test(m[1])) {
+        const name = m[1].trim();
+        if (/\s+end$/i.test(name)) { const base = name.replace(/\s+end$/i, '');
+          while (secStack.length) { const k = secStack.pop(); if (sections[k].name === base) break; } }
+        else { sections.push({ name: name.replace(/\s+start$/i, ''), parent: secStack.length ? secStack[secStack.length - 1] : -1, line: i }); secStack.push(sections.length - 1); }
+      }
+      else if ((m = raw.match(/^; FEATURE: (.+)/))) feature = m[1].trim();
+      else if ((m = raw.match(/^; LINE_WIDTH: ([\d.]+)/))) width = +m[1];
+      else if ((m = raw.match(/^; LAYER_HEIGHT: ([\d.]+)/))) { lh = +m[1]; layers[layer].h = lh; }
+      else if ((m = raw.match(/^; Z_HEIGHT: ([\d.]+)/))) { layerZ = +m[1]; layers[layer].z = layerZ; }
+      else if (raw.startsWith('; CHANGE_LAYER')) { layer++; layers.push({ z: 0, h: lh }); secStack.length = 0; }
+      else if ((m = raw.match(/^; ([^=]+?) = (.*)$/)) && raw.length < 400) meta.config[m[1]] = m[2];
+      else for (const part of raw.slice(1).split(/;\s*/)) {
+        if ((m = part.match(/^\s*([^:=]+): (.+)$/))) meta.header[m[1].trim()] = m[2].trim();
+      }
+      continue;
+    }
+    const s = raw.split(';')[0].trim();
+    if (!s) continue;
+    const cmd = s.split(/\s+/)[0].toUpperCase();
+
+    if (cmd === 'G0' || cmd === 'G1') {
+      const X = num(s, 'X'), Y = num(s, 'Y'), Z = num(s, 'Z'), E = num(s, 'E'), F = num(s, 'F');
+      if (F !== undefined) f = F;
+      let nx = x, ny = y, nz = z;
+      if (X !== undefined) nx = absXYZ ? X : x + X;
+      if (Y !== undefined) ny = absXYZ ? Y : y + Y;
+      if (Z !== undefined) nz = absXYZ ? Z : z + Z;
+      let e = 0;
+      if (E !== undefined) { e = absE ? E - lastE : E; if (absE) lastE = E; }
+      push(nx, ny, nz, e, i);
+    } else if (cmd === 'G2' || cmd === 'G3') {
+      const X = num(s, 'X'), Y = num(s, 'Y'), Z = num(s, 'Z'), E = num(s, 'E'), F = num(s, 'F');
+      const I = num(s, 'I') || 0, J = num(s, 'J') || 0;
+      if (F !== undefined) f = F;
+      const ex = X === undefined ? x : (absXYZ ? X : x + X);
+      const ey = Y === undefined ? y : (absXYZ ? Y : y + Y);
+      const ez = Z === undefined ? z : (absXYZ ? Z : z + Z);
+      let e = 0;
+      if (E !== undefined) { e = absE ? E - lastE : E; if (absE) lastE = E; }
+      const cx = x + I, cy = y + J, r = Math.hypot(I, J);
+      let a0 = Math.atan2(y - cy, x - cx), a1 = Math.atan2(ey - cy, ex - cx);
+      let sweep = a1 - a0;
+      if (cmd === 'G2') { if (sweep >= -1e-9) sweep -= 2 * Math.PI; }
+      else { if (sweep <= 1e-9) sweep += 2 * Math.PI; }
+      const n = Math.max(1, Math.ceil(Math.abs(sweep) * r / 0.6));
+      const sz = z;
+      for (let k = 1; k <= n; k++) {
+        const t = k / n, a = a0 + sweep * t;
+        const px = k === n ? ex : cx + r * Math.cos(a), py = k === n ? ey : cy + r * Math.sin(a);
+        push(px, py, sz + (ez - sz) * t, e / n, i);
+      }
+    } else if (cmd === 'G90') absXYZ = true;
+    else if (cmd === 'G91') absXYZ = false;
+    else if (cmd === 'M82') absE = true;
+    else if (cmd === 'M83') absE = false;
+    else if (cmd === 'G92') { const E = num(s, 'E'); if (E !== undefined) lastE = E; }
+    else if (cmd === 'M204') { const S = num(s, 'S') ?? num(s, 'P'); if (S) acc = S; }
+    else if (cmd === 'G4') { const P = num(s, 'P'), S = num(s, 'S'); const d = (P ? P / 1000 : 0) + (S || 0);
+      if (d > 0) moves.push({ x0: x, y0: y, z0: z, x1: x, y1: y, z1: z, len: 0, e: 0, extrude: false, feature: '暫停', width, h: lh, layer, f, acc, line: i, elen: 0, dwell: d, stage, tn, tb }); }
+    else if (cmd === 'M73') { const P = num(s, 'P'); if (P !== undefined && /^M73\s/.test(s)) anchors.push([moves.length, P]); }
+    else if (/^T\d+$/.test(cmd)) { const n = +cmd.slice(1); if (n < 255) { if (n !== tool) toolChanges.push({ move: moves.length, from: tool, to: n, line: i }); tool = n; } }
+    else if (cmd === 'G29' && /\bA/.test(s)) { const X = num(s, 'X'), Y = num(s, 'Y'), I = num(s, 'I'), J = num(s, 'J'); if (X !== undefined && I) g29 = { x: X, y: Y, w: I, h: J }; }
+    else if (cmd === 'M620' && /\bS\d+/.test(s)) inTC = true;
+    else if (cmd === 'M621') inTC = false;
+    else if (cmd === 'M1002') { const m = s.match(/gcode_claim_action\s*:\s*(\d+)/); if (m) { stage = +m[1]; stages.push({ code: stage, line: i });
+      moves.push({ x0: x, y0: y, z0: z, x1: x, y1: y, z1: z, len: 0, e: 0, extrude: false, feature: stageName(stage), width, h: lh, layer, f, acc, line: i, elen: 0, dwell: 0, stage, tn, tb }); } }
+    else if (cmd === 'M104' || cmd === 'M109' || cmd === 'M140' || cmd === 'M190') {
+      const S = num(s, 'S'); if (S === undefined) continue;
+      if (cmd === 'M104' || cmd === 'M109') tn = S; else tb = S;
+      // 等待加熱：插一個不動的點，讓時間軸上看得到「在等溫度」
+      if (cmd === 'M109' || cmd === 'M190') moves.push({ x0: x, y0: y, z0: z, x1: x, y1: y, z1: z, len: 0, e: 0, extrude: false,
+        feature: cmd === 'M109' ? `等噴嘴到 ${S}°C` : `等熱床到 ${S}°C`, width, h: lh, layer, f, acc, line: i, elen: 0, dwell: 0, stage, tn, tb });
+    }
+  }
+  for (; tagged < moves.length; tagged++) { moves[tagged].tool = tool; moves[tagged].tc = inTC; moves[tagged].sec = -1; }
+  return { lines, moves, meta, anchors, layers, stages, toolChanges, sections, g29 };
+}
+
+// ---------- 估算時間：梯形加減速 + 轉角速度，再用切片軟體的 M73 進度校正 ----------
+function estimateTimes(data) {
+  const { moves, anchors, meta } = data;
+  let prev = null;
+  let tEst = 0;
+  for (let i = 0; i < moves.length; i++) {
+    const m = moves[i];
+    const v = Math.max(1, m.f / 60), a = Math.max(100, m.acc);
+    let dt;
+    if (m.dwell) dt = m.dwell;
+    else if (m.len < 1e-6) dt = m.elen / v;
+    else {
+      // 進出轉角的速度：跟前後段夾角越小越快
+      const vin = junction(prev, m, v);
+      const next = moves[i + 1];
+      const vout = next && next.len > 1e-6 ? junction(m, next, Math.min(v, Math.max(1, next.f / 60))) : 0;
+      dt = trapezoid(m.len, vin, v, vout, a);
+    }
+    m.tEst0 = tEst; tEst += dt; m.tEst1 = tEst;
+    m.vAvg = m.len > 1e-6 ? m.len / dt : 0;
+    if (m.len > 1e-6) prev = m;
+  }
+  // 總時間：用切片軟體的預估
+  const tt = meta.header['total estimated time'] || meta.header['estimated printing time (normal mode)'] || '';
+  let total = parseDur(tt) || tEst;
+  // 校正：在每個 M73 P 點，把我們估的時間拉到「P% × 總時間」
+  const pts = [[0, 0]];
+  let lastP = -1;
+  for (const [idx, p] of anchors) {
+    if (p <= lastP) continue; lastP = p;
+    const te = idx < moves.length ? moves[idx].tEst0 : tEst;
+    if (te > pts[pts.length - 1][0]) pts.push([te, p / 100 * total]);
+  }
+  if (tEst > pts[pts.length - 1][0]) pts.push([tEst, Math.max(total, pts[pts.length - 1][1])]);
+  let j = 0;
+  const map = t => { while (j < pts.length - 2 && t > pts[j + 1][0]) j++;
+    const [a0, b0] = pts[j], [a1, b1] = pts[j + 1]; return b0 + (b1 - b0) * (t - a0) / (a1 - a0 || 1); };
+  for (const m of moves) { m.t0 = map(m.tEst0); m.t1 = map(m.tEst1); }
+  data.total = moves.length ? moves[moves.length - 1].t1 : 0;
+  data.rawTotal = tEst;
+}
+function junction(a, b, vmax) {
+  if (!a) return 0;
+  const ax = (a.x1 - a.x0) / a.len, ay = (a.y1 - a.y0) / a.len, az = (a.z1 - a.z0) / a.len;
+  const bx = (b.x1 - b.x0) / b.len, by = (b.y1 - b.y0) / b.len, bz = (b.z1 - b.z0) / b.len;
+  const c = ax * bx + ay * by + az * bz;           // cos 夾角
+  const va = Math.max(1, a.f / 60);
+  return Math.min(vmax, va) * Math.max(0, c) ** 2; // 直線接續 ≈ 全速，90° ≈ 停下
+}
+function trapezoid(d, v0, v, v1, a) {
+  v0 = Math.min(v0, v); v1 = Math.min(v1, v);
+  const da = (v * v - v0 * v0) / (2 * a), dd = (v * v - v1 * v1) / (2 * a);
+  if (da + dd <= d) return (v - v0) / a + (v - v1) / a + (d - da - dd) / v;
+  const vp = Math.sqrt(Math.max(0, (2 * a * d + v0 * v0 + v1 * v1) / 2));
+  return Math.max(0, (vp - v0) / a) + Math.max(0, (vp - v1) / a) || d / Math.max(v, 1);
+}
+function parseDur(s) { if (!s) return 0; let t = 0, m;
+  const re = /(\d+)\s*([dhms])/g; while ((m = re.exec(s))) t += +m[1] * { d: 86400, h: 3600, m: 60, s: 1 }[m[2]]; return t; }
+
+// ---------- 顏色 ----------
+const FEATURE_COLORS = {
+  'Outer wall': '#ff8a3d', 'Inner wall': '#ffd166', 'Overhang wall': '#3d7bff',
+  'Sparse infill': '#b5453b', 'Internal solid infill': '#a05cc8', 'Solid infill': '#a05cc8',
+  'Top surface': '#ff4d5e', 'Bottom surface': '#6cc6a5', 'Bridge': '#4aa3ff', 'Internal Bridge': '#4aa3ff',
+  'Gap infill': '#f2f2f2', 'Skirt': '#39c0c0', 'Brim': '#39c0c0', 'Support': '#5ec26a',
+  'Support interface': '#2f8f3c', 'Support transition': '#5ec26a', 'Prime tower': '#9aa0aa',
+  'Custom': '#7a808a', '起始程序': '#7a808a', 'Ironing': '#ff9ecb', 'Floating vertical shell': '#ffb36b',
+};
+const FEATURE_ZH = {
+  'Outer wall': '外牆', 'Inner wall': '內牆', 'Overhang wall': '懸垂外牆', 'Sparse infill': '稀疏填充',
+  'Internal solid infill': '內部實心填充', 'Solid infill': '實心填充', 'Top surface': '頂面', 'Bottom surface': '底面',
+  'Bridge': '橋接', 'Internal Bridge': '內部橋接', 'Gap infill': '縫隙填充', 'Skirt': '裙邊', 'Brim': '邊緣 Brim',
+  'Support': '支撐', 'Support interface': '支撐介面', 'Prime tower': '擦料塔', 'Custom': '自訂 / 起始', 'Ironing': '熨燙',
+};
+const zh = f => FEATURE_ZH[f] || f;
+// Bambu 起始程序的步驟代碼（M1002 gcode_claim_action，跟 MQTT 的 stg_cur 同一套）
+const STAGE_ZH = { [-1]: '開機準備', 0: '列印中', 1: '自動調平熱床', 2: '預熱熱床', 3: '共振補償檢查', 4: '換料',
+  7: '加熱噴嘴', 8: '擠出校準', 9: '掃描床面', 10: '檢查首層', 11: '辨識列印板', 13: '噴頭歸零', 14: '清潔噴嘴',
+  24: '加熱並準備線材', 25: '馬達噪音校準' };
+const STAGE_COLOR = { [-1]: '#6b717c', 1: '#4aa3ff', 2: '#ff6b5e', 3: '#a05cc8', 4: '#ffd166', 7: '#ff6b5e', 8: '#5ec26a',
+  13: '#9aa0aa', 14: '#39c0c0', 24: '#ff9f43', 0: '#ff8a3d' };
+const stageName = c => STAGE_ZH[c] ?? `步驟 ${c}`;
+// 把連續同一步驟的移動合成一段（只看準備階段，第 1 層之後全部算「列印中」）
+function buildSegments(data) {
+  const segs = [];
+  for (let i = 0; i < data.moves.length; i++) {
+    const m = data.moves[i];
+    const code = m.layer > 0 ? 0 : m.stage;
+    const last = segs[segs.length - 1];
+    if (last && last.code === code) { last.t1 = m.t1; last.i1 = i; }
+    else segs.push({ code, t0: m.t0, t1: m.t1, i0: i, i1: i });
+  }
+  // 開頭還沒進入任何步驟的那一小段如果很短就略過
+  data.segments = segs.filter(s => !(s.code === -1 && s.t1 - s.t0 < 2));
+  data.printStart = (segs.find(s => s.code === 0) || { t0: 0 }).t0;
+}
+// 色階：深藍 → 青 → 黃 → 紅
+const RAMP = ['#2b3a8f', '#1f8fb3', '#3cc48a', '#e8d44d', '#f08a3c', '#d9324a'].map(c => new THREE.Color(c));
+function ramp(t) { t = Math.min(1, Math.max(0, t)) * (RAMP.length - 1); const i = Math.min(RAMP.length - 2, Math.floor(t));
+  return RAMP[i].clone().lerp(RAMP[i + 1], t - i); }
+const rampCss = () => 'linear-gradient(90deg,' + RAMP.map(c => '#' + c.getHexString()).join(',') + ')';
+
+
+
+// ---------- 配色（科技感） ----------
+Object.assign(FEATURE_COLORS, {
+  'Outer wall': '#4de2ff', 'Inner wall': '#2f7dff', 'Overhang wall': '#ffb547',
+  'Sparse infill': '#7b5cff', 'Internal solid infill': '#b45cff', 'Solid infill': '#b45cff',
+  'Top surface': '#ff4f8b', 'Bottom surface': '#5ef2a0', 'Bridge': '#ffb547', 'Internal Bridge': '#ffb547',
+  'Gap infill': '#e8f6ff', 'Skirt': '#5ef2a0', 'Brim': '#5ef2a0', 'Support': '#8fa3b0', 'Support interface': '#c9d6de',
+  'Custom': '#4b5d6a', '起始程序': '#4b5d6a',
+});
+Object.assign(STAGE_COLOR, { [-1]: '#3c4c58', 0: 'rgba(77,226,255,.2)', 1: '#2f7dff', 2: '#ff5d5d', 3: '#b45cff', 4: '#ffd166',
+  8: '#5ef2a0', 13: '#8fa3b0', 14: '#3fd0c9', 24: '#ffb547' });
+
+// 全息模式的配色：以青藍為主，用亮度分層；橋接、懸垂用琥珀色點綴
+const HOLO_COLORS = {
+  // 沿用實體模式的色相（外牆橘、內牆黃、填充紅、實心紫、頂面粉、底面綠、橋接藍），
+  // 降一點飽和、拉齊亮度，放在暗色發光的介面上比較不刺眼
+  'Outer wall': '#ff9f68', 'Inner wall': '#f0cd6e', 'Overhang wall': '#62a9ff',
+  'Sparse infill': '#d4645c', 'Internal solid infill': '#b07ad9', 'Solid infill': '#b07ad9',
+  'Top surface': '#ff6f86', 'Bottom surface': '#6fd6b0', 'Bridge': '#62a9ff', 'Internal Bridge': '#62a9ff',
+  'Gap infill': '#e3eef2', 'Skirt': '#5ccaca', 'Brim': '#5ccaca', 'Support': '#82c98d', 'Support interface': '#a9dbb0',
+  'Ironing': '#ff9ecb', 'Custom': '#4b5d6a', '起始程序': '#4b5d6a',
+}
+// 全息材質：深色本體＋邊緣光＋線材圓柱明暗＋目前層發光
+const holoMat = new THREE.ShaderMaterial({
+  uniforms: { uLayerZ: { value: -99 }, uRim: { value: new THREE.Color('#4de2ff') } },
+  vertexShader: `
+    varying vec3 vN; varying vec3 vV; varying vec3 vCol; varying vec3 vLocal; varying float vZ;
+    void main() {
+      mat4 m = modelMatrix * instanceMatrix;
+      vec4 wp = m * vec4(position, 1.0);
+      vN = normalize(mat3(m) * normal);
+      vV = cameraPosition - wp.xyz;
+      #ifdef USE_INSTANCING_COLOR
+        vCol = instanceColor;
+      #else
+        vCol = vec3(0.5);
+      #endif
+      vLocal = position; vZ = wp.z;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: `
+    uniform float uLayerZ; uniform vec3 uRim;
+    varying vec3 vN; varying vec3 vV; varying vec3 vCol; varying vec3 vLocal; varying float vZ;
+    void main() {
+      vec3 N = normalize(vN), V = normalize(vV);
+      // 把方塊的寬、高當成圓柱：中間亮、兩側暗，看起來像一根線材
+      float cy = vLocal.y * 2.0, cz = vLocal.z * 2.0;
+      float tube = sqrt(max(0.0, 1.0 - cy * cy * (1.0 - abs(N.z)) - cz * cz * abs(N.z) * 0.0));
+      float side = sqrt(max(0.0, 1.0 - cz * cz));
+      float shade = abs(N.z) > 0.5 ? (0.55 + 0.45 * sqrt(max(0.0, 1.0 - cy * cy))) : (0.35 + 0.5 * side);
+      float fres = pow(1.0 - abs(dot(N, V)), 2.2);
+      float cur = smoothstep(0.16, 0.0, abs(vZ - uLayerZ));
+      vec3 col = vCol * (0.16 + 0.5 * shade);
+      col += uRim * fres * 0.55;
+      col += vCol * cur * 0.9 + vec3(0.25) * cur * shade;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+const solidMat = new THREE.MeshLambertMaterial();
+// 線框：每條擠出路徑畫成一條粗細可調的線（顏色在 CPU 算好：越高越亮、目前層最亮）
+const wireMat = new LineMaterial({ vertexColors: true, linewidth: 2, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+// 線越粗疊得越密，亮度要跟著降，不然牆面會整片過曝
+// 正在印的那層獨立畫：最亮、稍粗，不受遠近調暗影響
+const curWireMat = new LineMaterial({ vertexColors: true, linewidth: 3, transparent: true, depthWrite: false, blending: THREE.NormalBlending, opacity: 1 });
+let curWire, curWireStart = 0, curWireLayer = -1, wirePos;
+const setLineW = w => { wireMat.linewidth = w; curWireMat.linewidth = w + 1; };
+// 依鏡頭距離調亮度：算出相鄰兩層在螢幕上隔幾個像素，隔得越近（遠看）就越淡
+function updateWireFade() {
+  if (!wire || !wire.visible) return;
+  const dist = camera.position.distanceTo(controls.target);
+  const pxPerMm = (innerHeight / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(dist, 1);
+  const gap = (data?.layers[1]?.h || 0.2) * pxPerMm;
+  wireMat.opacity = 0.5 * Math.pow(Math.min(1, Math.max(0.15, gap / (wireMat.linewidth * 2.2))), 0.9);
+}
+setLineW(2);
+const W_LOW = new THREE.Color('#0b5a66'), W_HIGH = new THREE.Color('#62f2e4'), W_CUR = new THREE.Color(0.55, 1.0, 0.95);
+let wireBase, wireFull, wireZ, wireCol, wireMaxZ = 20;
+// 線框模式下各種線條的亮度
+const WIRE_I = { 'Outer wall': 1.0, 'Inner wall': 0.36, 'Overhang wall': 1.0, 'Top surface': 0.3, 'Bottom surface': 0.22,
+  'Sparse infill': 0.2, 'Internal solid infill': 0.18, 'Solid infill': 0.18, 'Gap infill': 0.25, 'Bridge': 0.35, 'Internal Bridge': 0.2,
+  'Support': 0.15, 'Support interface': 0.2, 'Brim': 0.35, 'Skirt': 0.35 };
+
+// ---------- three.js 場景 ----------
+const view = $('view');
+const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, alpha: true });
+renderer.setPixelRatio(devicePixelRatio);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog('#05080c', 400, 900);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.5, 5000);
+camera.up.set(0, 0, 1);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight('#cfefff', '#0a1018', 1.5));
+const sun = new THREE.DirectionalLight('#ffffff', 1.5); sun.position.set(-150, -200, 300); scene.add(sun);
+const rim = new THREE.DirectionalLight('#4de2ff', 0.8); rim.position.set(200, 250, 80); scene.add(rim);
+// 光暈後製：只讓亮的部分（目前層、噴頭、邊光、掃描面）散光，暗的不糊
+// 後製會吃掉透明背景，所以背景改由場景自己畫（顏色接近原本的漸層中心）
+scene.background = new THREE.Color('#08111a');
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.55, 0.32);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+let underglow, bed, data, extMesh, ghost, travel, nozzle, scan, extIdx = [], instCount = 0, bbox;
+const baseColors = [];
+let layerStart = [];
+
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); composer.setPixelRatio(devicePixelRatio); wireMat.resolution.set(w, h); curWireMat.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  placeGauge(); }
+// 層數量尺放在右側、即時數據上方
+function placeGauge() { const t = $('tele'); if (!t || !t.offsetHeight) return; $('lg').style.bottom = (innerHeight - t.getBoundingClientRect().top + 16) + 'px'; }
+addEventListener('resize', resize);
+
+// 底板：只畫格線，以模型為中心越遠越淡
+const gridMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  uniforms: { uCenter: { value: new THREE.Vector2(128, 128) }, uR: { value: 60 }, uCol: { value: new THREE.Color('#4de2ff') } },
+  vertexShader: `varying vec2 vP; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vP = wp.xy; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+  fragmentShader: `uniform vec2 uCenter; uniform float uR; uniform vec3 uCol; varying vec2 vP;
+    float grid(vec2 p, float s) { vec2 q = p / s; vec2 g = abs(fract(q - 0.5) - 0.5) / fwidth(q); return 1.0 - min(min(g.x, g.y), 1.0); }
+    void main() {
+      float minor = grid(vP, 5.0), major = grid(vP, 25.0);
+      float d = length(vP - uCenter);
+      float fade = 1.0 - smoothstep(uR * 0.35, uR * 1.35, d);
+      fade *= fade;
+      float a = (minor * 0.07 + major * 0.16) * fade;
+      if (a < 0.003) discard;
+      gl_FragColor = vec4(uCol, a);
+    }`,
+});
+const gridHome = new THREE.Vector2(128, 128);
+function buildBed(size) {
+  if (bed) scene.remove(bed);
+  bed = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), gridMat);
+  bed.scale.set(size[0] * 3, size[1] * 3, 1); bed.position.set(size[0] / 2, size[1] / 2, -0.02);
+  bed.renderOrder = -10; scene.add(bed);
+}
+
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3(), tmpS = new THREE.Vector3(), zAxis = new THREE.Vector3(0, 0, 1);
+function setInst(k, frac) {
+  const m = data.moves[extIdx[k]];
+  if (m.layer === 0 && !startShown) frac = 0;
+  const x1 = m.x0 + (m.x1 - m.x0) * frac, y1 = m.y0 + (m.y1 - m.y0) * frac;
+  const L = Math.hypot(x1 - m.x0, y1 - m.y0);
+  tmpV.set((m.x0 + x1) / 2, (m.y0 + y1) / 2, m.z1 - m.h / 2);
+  tmpQ.setFromAxisAngle(zAxis, Math.atan2(m.y1 - m.y0, m.x1 - m.x0));
+  tmpS.set(Math.max(L + m.width * 0.6, 1e-3) * (frac > 0 ? 1 : 0.0001), m.width, m.h * 0.95);
+  extMesh.setMatrixAt(k, tmpM.compose(tmpV, tmpQ, tmpS));
+}
+
+function load(d, name) {
+  data = d;
+  estimateTimes(data);
+  buildSegments(data);
+  // 線材：顏色、種類、實際用到哪幾捲
+  const cf = data.meta.config;
+  const cols = (cf.filament_colour || '#d8e6ee').split(/[;,]/).map(c => c.replace(/"/g, '').trim());
+  const types = (cf.filament_type || '').split(/[;,]/).map(c => c.replace(/"/g, '').trim());
+  data.fil = cols.map((c, i) => ({ color: /^#[0-9a-f]{6}/i.test(c) ? c.slice(0, 7) : '#d8e6ee', type: types[i] || types[0] || '' }));
+  data.used = [...new Set(data.moves.filter(m => m.extrude && m.layer > 0).map(m => m.tool))].sort((a, b) => a - b);
+  for (const u of data.used) if (!data.fil[u]) data.fil[u] = { color: '#d8e6ee', type: '' };
+  // 換料區段：標出從哪捲換到哪捲
+  { let from = null; for (let i = 0; i < data.moves.length; i++) { const m = data.moves[i]; if (m.tc) { if (from === null) from = data.moves[i - 1]?.tool ?? m.tool; m.tcFrom = from; } else from = null; }
+    let to = null; for (let i = data.moves.length - 1; i >= 0; i--) { const m = data.moves[i]; if (m.tc) { if (to === null) to = data.moves[i + 1]?.tool ?? m.tool; m.tcTo = to; } else to = null; } }
+  if (data.used.length > 1) $('colorMode').value = 'filament';
+  for (const o of [extMesh, ghost, travel, scan]) if (o) { scene.remove(o); o.geometry?.dispose?.(); }
+  const cfg = data.meta.config;
+  const area = (cfg.printable_area || '0x0,256x0,256x256,0x256').split(',').map(p => p.split('x').map(Number));
+  buildBed([Math.max(...area.map(p => p[0])), Math.max(...area.map(p => p[1]))]);
+  layerStart = [];
+  for (const m of data.moves) if (layerStart[m.layer] === undefined) layerStart[m.layer] = m.t0;
+  rebuildGeometry();
+
+  bbox = new THREE.Box3();
+  for (const m of data.moves) if (m.extrude && m.layer > 0) bbox.expandByPoint(tmpV.set(m.x1, m.y1, m.z1));
+  if (bbox.isEmpty()) bbox.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(256, 256, 10));
+  wireMaxZ = bbox.max.z || 20; recolor();
+  { const bc = bbox.getCenter(new THREE.Vector3()), bs = bbox.getSize(new THREE.Vector3());
+    gridMat.uniforms.uCenter.value.set(bc.x, bc.y); gridHome.set(bc.x, bc.y); gridMat.uniforms.uR.value = Math.max(bs.x, bs.y) * 0.75 + 12; }
+  // 引線標註：最高點、尺寸
+  { let top = null; for (const m of data.moves) if (m.extrude && m.layer > 0 && (!top || m.z1 > top.z1 + 1e-6)) top = m;
+    const sz = bbox.getSize(new THREE.Vector3());
+    annos = [];
+    const _unused = [
+      { p: new THREE.Vector3((top.x0 + top.x1) / 2, (top.y0 + top.y1) / 2, top.z1), t: '最高點 MAX Z', s: `${top.z1.toFixed(2)} mm`, dy: 70, dx: -30 },
+      { p: new THREE.Vector3(bbox.max.x, bbox.min.y, 0), t: '尺寸 SIZE', s: `${sz.x.toFixed(1)} × ${sz.y.toFixed(1)} × ${sz.z.toFixed(1)} mm`, dy: 46, dx: 40 },
+      { p: new THREE.Vector3(bbox.min.x, bbox.max.y, 0), t: '線材 FILAMENT', s: `${data.used.map(u => '#' + (u + 1) + ' ' + data.fil[u].type).join(' / ')}`, dy: 56, dx: -40 },
+    ];
+    $('annoBox').innerHTML = annos.map((a, i) => `<div class="anno" id="an${i}">${a.t}<span>${a.s}</span></div>`).join('');
+    $('annoLines').innerHTML = annos.map((a, i) => `<polyline id="al${i}" fill="none" stroke="#4de2ff" stroke-opacity=".45" stroke-width="1"/><circle id="ac${i}" r="2" fill="#4de2ff"/>`).join(''); }
+  // 目前層的掃描面
+  const sz3 = bbox.getSize(new THREE.Vector3()), c = bbox.getCenter(new THREE.Vector3());
+  scan = new THREE.Group();
+  const pw = sz3.x + 16, ph = sz3.y + 16;
+  const sp = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.018, depthWrite: false, side: THREE.DoubleSide }));
+  const se = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(pw, ph)), new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.35 }));
+  scan.add(sp, se); sp.renderOrder = 8; se.renderOrder = 8; scan.position.set(c.x, c.y, 0); scene.add(scan);
+  // 模型底下的青色光暈
+  if (!underglow) {
+    // 用 shader 算平滑的放射漸層（之前用圖片會出現色斑）
+    underglow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: { uCol: { value: new THREE.Color('#4de2ff') } },
+      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform vec3 uCol; varying vec2 vUv;
+        void main() { float d = length(vUv - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - d), 2.4) * 0.12;
+          gl_FragColor = vec4(uCol * a, 1.0); }`,
+    }));
+    underglow.renderOrder = 1; scene.add(underglow);
+  }
+  underglow.scale.set(sz3.x * 1.9 + 30, sz3.y * 1.9 + 30, 1); underglow.position.set(c.x, c.y, 0.03);
+  underglow.visible = $('renderMode').value !== 'solid';
+
+  const sz = sz3.length();
+  controls.target.set(c.x, c.y, c.z * 0.7);
+  camera.position.set(c.x - sz * 1.0, c.y - sz * 1.55, c.z + sz * 1.05);
+  controls.update();
+  homePose = { pos: camera.position.clone(), tgt: controls.target.clone() };
+
+  // 檔案資訊
+  $('drop').classList.add('hide'); $('hudRoot').classList.remove('hide');
+  resize();
+  const slicer = (data.lines.slice(0, 5).join('\n').match(/generated by (.+?) on /) || [])[1] || '';
+  $('fname').textContent = data.objName || name.replace(/\.gcode\.3mf$|\.3mf$|\.gcode$/i, '');
+  $('spec').innerHTML = [cfg.printer_model?.replace('Bambu Lab ', 'BAMBU ') || '', cfg.filament_type, `${cfg.nozzle_diameter || '?'}mm`, `${cfg.layer_height || '?'}mm × ${data.layers.length - 1}L`].filter(Boolean).join(' · ')
+    + `<br>${slicer}　預估 ${fmtT(data.total)}`
+    + `<div class="fils">${data.used.map(u => `<span><i class="chip" style="background:${data.fil[u].color}"></i>#${u + 1} ${data.fil[u].type}</span>`).join('')}</div>`;
+  $('tTot').textContent = fmtT(data.total);
+  $('lgTop').textContent = 'L' + (data.layers.length - 1);
+  drawTrack();
+  buildShell();
+  buildZones();
+  buildPlate();
+  setTime(0);
+  startIntro();
+}
+
+function rebuildGeometry() {
+  for (const o of [extMesh, ghost, travel, nozzle]) if (o) scene.remove(o);
+  extIdx = [];
+  const moves = data.moves;
+  for (let i = 0; i < moves.length; i++) { const m = moves[i]; m.inst = -1; if (m.extrude) { m.inst = extIdx.length; extIdx.push(i); } }
+  instCount = extIdx.length;
+  let c = 0; for (const m of moves) { m.instBefore = c; if (m.inst >= 0) c++; }
+  startShown = false;
+
+  extMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), solidMat, instCount);
+  extMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let k = 0; k < instCount; k++) setInst(k, 1);
+  extMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(instCount * 3), 3);
+  extMesh.frustumCulled = false;
+  scene.add(extMesh);
+
+  // 點雲：沿著每條擠出路徑每 0.4mm 取一個點，順序跟時間一致
+  if (cloud) { scene.remove(cloud); cloud.geometry.dispose(); }
+  const SP = 0.4;
+  instPtStart = new Int32Array(instCount + 1);
+  let np = 0;
+  for (let k = 0; k < instCount; k++) { instPtStart[k] = np; const m = moves[extIdx[k]]; np += Math.max(1, Math.ceil(Math.hypot(m.x1 - m.x0, m.y1 - m.y0) / SP)); }
+  instPtStart[instCount] = np;
+  const pp = new Float32Array(np * 3);
+  ptInst = new Int32Array(np);
+  for (let k = 0; k < instCount; k++) { const m = moves[extIdx[k]], a = instPtStart[k], n = instPtStart[k + 1] - a;
+    for (let j = 0; j < n; j++) { const u = (j + 0.5) / n, q = (a + j) * 3;
+      pp[q] = m.x0 + (m.x1 - m.x0) * u + (Math.random() - 0.5) * 0.08; pp[q + 1] = m.y0 + (m.y1 - m.y0) * u + (Math.random() - 0.5) * 0.08; pp[q + 2] = m.z1 - m.h / 2;
+      ptInst[a + j] = k; } }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.BufferAttribute(pp, 3));
+  cg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(np * 3), 3));
+  cloud = new THREE.Points(cg, new THREE.PointsMaterial({ size: 0.55, vertexColors: true, map: dotTex(), transparent: true, fog: false,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+  cloud.frustumCulled = false; cloud.renderOrder = 5;
+  scene.add(cloud);
+  firstPrintInst = extIdx.findIndex(i => moves[i].layer > 0); if (firstPrintInst < 0) firstPrintInst = 0;
+  if (wire) { scene.remove(wire); wire.geometry.dispose(); }
+  { const n = instCount - firstPrintInst, wp = new Float32Array(n * 6);
+    for (let k = firstPrintInst; k < instCount; k++) { const m = moves[extIdx[k]], z = m.z1 - m.h / 2, o = (k - firstPrintInst) * 6;
+      wp[o] = m.x0; wp[o + 1] = m.y0; wp[o + 2] = z; wp[o + 3] = m.x1; wp[o + 4] = m.y1; wp[o + 5] = z; }
+    wireZ = new Float32Array(n); for (let k = 0; k < n; k++) wireZ[k] = wp[k * 6 + 2];
+    wirePos = wp; curWireLayer = -1;
+    if (curWire) { scene.remove(curWire); curWire.geometry.dispose(); }
+    curWire = new LineSegments2(new LineSegmentsGeometry(), curWireMat); curWire.frustumCulled = false; curWire.renderOrder = 6; curWire.visible = false; scene.add(curWire);
+    wireBase = new Float32Array(n * 3); wireCol = new Float32Array(n * 6);
+    const wg = new LineSegmentsGeometry(); wg.setPositions(wp); wg.setColors(wireCol);
+    wire = new LineSegments2(wg, wireMat); wire.frustumCulled = false; wire.renderOrder = 5; wire.visible = false; scene.add(wire); }
+  const NL = data.layers.length;
+  layerInst = new Int32Array(NL + 1).fill(-1);
+  for (let k = instCount - 1; k >= 0; k--) layerInst[moves[extIdx[k]].layer] = k;
+  layerInst[NL] = instCount;
+  for (let l = NL - 1; l >= 0; l--) if (layerInst[l] < 0) layerInst[l] = layerInst[l + 1];
+
+  const gIdx = extIdx.filter(i => moves[i].layer > 0);
+  const gp = new Float32Array(gIdx.length * 6);
+  gIdx.forEach((i, k) => { const m = moves[i]; gp.set([m.x0, m.y0, m.z1 - m.h / 2, m.x1, m.y1, m.z1 - m.h / 2], k * 6); });
+  const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.BufferAttribute(gp, 3));
+  ghost = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.07, depthWrite: false }));
+  ghost.renderOrder = 4; scene.add(ghost);
+
+  const tr = []; let tc = 0;
+  for (const m of moves) { m.travBefore = tc; if (!m.extrude && m.len > 1e-6) { tr.push(m.x0, m.y0, m.z0, m.x1, m.y1, m.z1); m.trav = tc++; } else m.trav = -1; }
+  const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(tr, 3));
+  travel = new THREE.LineSegments(tg, new THREE.LineBasicMaterial({ color: '#ffb547', transparent: true, opacity: 0.3 }));
+  scene.add(travel);
+
+  if (!nozzle) {
+    nozzle = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.5, 4, 6), new THREE.MeshBasicMaterial({ color: '#4de2ff', wireframe: true }));
+    cone.rotation.x = -Math.PI / 2; cone.position.z = 2.2;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(2.4, 2.8, 48), new THREE.MeshBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    const ring2 = new THREE.Mesh(new THREE.RingGeometry(4.2, 4.4, 48), new THREE.MeshBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
+    const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
+      new THREE.LineDashedMaterial({ color: '#4de2ff', dashSize: 0.8, gapSize: 0.6, transparent: true, opacity: 0.6 }));
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.9, 24), new THREE.MeshBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.7, depthWrite: false }));
+    nozzle.add(cone, ring, ring2, beam, dot);
+    nozzle.userData = { ring, ring2, beam, dot };
+  }
+  scene.add(nozzle);
+  lastLayer = -1; lastPartial = -1;
+  recolor();
+  applyToggles();
+  applyRender();
+}
+
+let lastLayer = -1, startShown = false, legendHTML = '', annos = [];
+const PAL = () => $('renderMode').value !== 'solid' ? HOLO_COLORS : FEATURE_COLORS;
+let wire, cloud, instPtStart, ptInst, firstPrintInst = 0, _dot, layerInst;
+function dotTex() {
+  if (_dot) return _dot;
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.35, 'rgba(255,255,255,.6)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  return (_dot = new THREE.CanvasTexture(c));
+}
+let lastRender = null;
+function applyRender() {
+  const mode = $('renderMode').value, cl = mode === 'cloud';
+  extMesh.visible = !cl && mode !== 'wire'; cloud.visible = cl; wire.visible = mode === 'wire'; curWire.visible = mode === 'wire';
+  ghost.material.opacity = mode === 'wire' ? 0.02 : 0.04;
+  extMesh.material = mode === 'holo' ? holoMat : solidMat;
+  if (underglow) underglow.visible = mode !== 'solid';
+  // 配色會跟著顯示方式變，切換時重新上色
+  if (lastRender !== null && (lastRender === 'solid') !== (mode === 'solid')) recolor();
+  lastRender = mode;
+}
+function recolor() {
+  const mode = $('colorMode').value, moves = data.moves;
+  let lo = Infinity, hi = -Infinity;
+  const val = m => mode === 'speed' ? m.f / 60 : mode === 'actual' ? m.vAvg : m.acc;
+  if (mode !== 'feature' && mode !== 'filament') for (const i of extIdx) { const v = val(moves[i]); if (moves[i].layer > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+  baseColors.length = 0;
+  const feats = new Map();
+  for (const i of extIdx) { const m = moves[i]; let col;
+    if (mode === 'feature') { col = new THREE.Color(PAL()[m.feature] || '#5b6f7c'); if (m.layer > 0) feats.set(m.feature, col); }
+    else if (mode === 'filament') { col = new THREE.Color(data.fil[m.tool]?.color || '#d8e6ee'); if (m.layer > 0) feats.set('#' + (m.tool + 1) + ' ' + (data.fil[m.tool]?.type || ''), col); }
+    else col = ramp((val(m) - lo) / (hi - lo || 1));
+    baseColors.push(col); }
+  // 線框底色：線條本身的顏色（類型／線材／速度色階）× 類型亮度 × 高度（越高越亮）
+  if (wire) { const c = new THREE.Color();
+    wireFull = new Float32Array(wireBase.length);
+    for (let k = firstPrintInst; k < instCount; k++) { const m = moves[extIdx[k]], I = WIRE_I[m.feature] ?? 0.2, j = k - firstPrintInst;
+      c.copy(baseColors[k]);
+      wireFull[j * 3] = c.r; wireFull[j * 3 + 1] = c.g; wireFull[j * 3 + 2] = c.b;
+      const hb = 0.55 + 0.45 * Math.pow(Math.min(1, Math.max(0, wireZ[j] / wireMaxZ)), 0.8);
+      c.multiplyScalar(I * hb * 0.8);
+      wireBase[j * 3] = c.r; wireBase[j * 3 + 1] = c.g; wireBase[j * 3 + 2] = c.b; }
+    curWireLayer = -1; }
+  const unit = mode === 'accel' ? 'mm/s²' : 'mm/s';
+  const title = { filament: '線材 FILAMENTS', feature: '線條類型 FEATURES', speed: '設定速度 F', actual: '估算平均速度', accel: '加速度' }[mode];
+  legendHTML = `<div class="hd"><span class="tag">${title}</span><span class="ln"></span></div>` + (mode === 'feature' || mode === 'filament'
+    ? `<div class="leg">${[...feats].map(([f, c]) => `<div><i style="background:#${c.getHexString()};box-shadow:0 0 6px #${c.getHexString()}"></i>${zh(f)}</div>`).join('')}</div>`
+    : `<div class="grad" style="background:${rampCss()}"></div><div class="gl"><span>${Math.round(lo)}</span><span>${Math.round(hi)} ${unit}</span></div>`);
+  lastLayer = -1; sideMode = '';
+  if (data && extMesh) { paint(curLayer()); if (curMove != null) updateSide(data.moves[curMove]); }
+}
+function paintWire(layer) {
+  if (!wire || !wireBase) return;
+  const lz = layer > 0 ? (data.layers[layer]?.z ?? 0) : -99;
+  for (let j = 0; j < wireZ.length; j++) {
+    // 印過的層：剛印完的稍亮，越往下越淡
+    const below = Math.max(0, lz - 0.1 - wireZ[j]), f = lz < 0 ? 0.85 : 0.62 + 0.3 * Math.exp(-below / 1.2);
+    const r = wireBase[j * 3] * f, g = wireBase[j * 3 + 1] * f, b = wireBase[j * 3 + 2] * f;
+    const o = j * 6; wireCol[o] = wireCol[o + 3] = r; wireCol[o + 1] = wireCol[o + 4] = g; wireCol[o + 2] = wireCol[o + 5] = b;
+  }
+  const a = wire.geometry.attributes.instanceColorStart; if (a) a.data.needsUpdate = true;
+  setCurWire(layer);
+}
+// 線框進度：正在畫的那一段只畫到噴頭位置（線跟著噴頭變長）
+let curPart = -1, curPartEnd = [0, 0];
+function updateWireProgress(m, frac, count) {
+  // 一般線框不畫正在畫的那段（交給目前層去畫到一半）
+  wire.geometry.instanceCount = Math.max(0, (m.inst >= 0 ? m.inst : count) - firstPrintInst);
+  const g = curWire.geometry, attr = g.attributes.instanceStart;
+  if (!attr || m.layer !== curWireLayer) { g.instanceCount = 0; return; }
+  const arr = attr.data.array;
+  if (curPart >= 0) { arr[curPart * 6 + 3] = curPartEnd[0]; arr[curPart * 6 + 4] = curPartEnd[1]; curPart = -1; }
+  if (m.inst >= 0) {
+    const j = m.inst - firstPrintInst - curWireStart;
+    curPartEnd = [arr[j * 6 + 3], arr[j * 6 + 4]]; curPart = j;
+    arr[j * 6 + 3] = arr[j * 6] + (curPartEnd[0] - arr[j * 6]) * frac;
+    arr[j * 6 + 4] = arr[j * 6 + 1] + (curPartEnd[1] - arr[j * 6 + 1]) * frac;
+    g.instanceCount = j + 1;
+  } else g.instanceCount = Math.max(0, count - firstPrintInst - curWireStart);
+  attr.data.needsUpdate = true;
+}
+function setCurWire(layer) {
+  if (!curWire || layer === curWireLayer) return;
+  curWireLayer = layer;
+  if (layer <= 0 || !layerInst) { curWire.geometry.instanceCount = 0; return; }
+  const a = layerInst[layer] - firstPrintInst, b = layerInst[layer + 1] - firstPrintInst;
+  curWireStart = a;
+  const g = new LineSegmentsGeometry(); g.setPositions(new Float32Array(wirePos.subarray(a * 6, Math.max(a, b) * 6)));
+  // 目前層：用線條本身的顏色再提亮一點
+  const n = Math.max(0, b - a), cc = new Float32Array(n * 6);
+  // 保留色相、把飽和度拉高，不往白色靠，才看得出是哪種線
+  const hc = new THREE.Color(), hsl = {};
+  for (let j = 0; j < n; j++) { const o = (a + j) * 3; hc.setRGB(wireFull[o], wireFull[o + 1], wireFull[o + 2]).getHSL(hsl);
+    hc.setHSL(hsl.h, Math.min(1, hsl.s * 1.25 + 0.1), Math.min(0.62, Math.max(0.5, hsl.l)));
+    cc[j * 6] = cc[j * 6 + 3] = hc.r; cc[j * 6 + 1] = cc[j * 6 + 4] = hc.g; cc[j * 6 + 2] = cc[j * 6 + 5] = hc.b; }
+  g.setColors(cc);
+  curPart = -1;
+  curWire.geometry.dispose(); curWire.geometry = g;
+}
+function paint(layer) {
+  const dim = $('dimPast').checked;
+  const c = new THREE.Color();
+  for (let k = 0; k < instCount; k++) {
+    const m = data.moves[extIdx[k]];
+    c.copy(baseColors[k]);
+    if (m.layer === layer) c.lerp(new THREE.Color('#ffffff'), 0.12);
+    else if (dim && m.layer < layer) c.multiplyScalar(0.42);
+    extMesh.setColorAt(k, c);
+  }
+  extMesh.instanceColor.needsUpdate = true;
+  paintWire(layer);
+  if (cloud) {
+    const ic = extMesh.instanceColor.array, pc = cloud.geometry.attributes.color.array;
+    for (let j = 0; j < ptInst.length; j++) { const q = ptInst[j] * 3, o = j * 3;
+      const boost = data.moves[extIdx[ptInst[j]]].layer === layer ? 1.6 : 0.8;
+      pc[o] = ic[q] * boost; pc[o + 1] = ic[q + 1] * boost; pc[o + 2] = ic[q + 2] * boost; }
+    cloud.geometry.attributes.color.needsUpdate = true;
+  }
+  lastLayer = layer;
+}
+
+// ---------- 時間 → 位置 ----------
+let t = 0, playing = false, rate = 30, curMove = 0, lastPartial = -1;
+const curLayer = () => data ? data.moves[curMove]?.layer ?? 0 : 0;
+function findMove(time) {
+  const mv = data.moves; let lo = 0, hi = mv.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (mv[mid].t1 < time) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+const nozPos = new THREE.Vector3();
+function setTime(time) {
+  t = Math.min(Math.max(0, time), data.total);
+  if (intro) return;
+  const i = findMove(t); curMove = i;
+  const m = data.moves[i];
+  const frac = m.t1 > m.t0 ? Math.min(1, Math.max(0, (t - m.t0) / (m.t1 - m.t0))) : 1;
+  const wantStart = $('showStart').checked || m.layer === 0;
+  if (wantStart !== startShown) { startShown = wantStart; for (let k = 0; k < instCount && data.moves[extIdx[k]].layer === 0; k++) setInst(k, 1); }
+  if (lastPartial >= 0 && lastPartial < instCount) setInst(lastPartial, 1);
+  let count = m.instBefore;
+  if (m.inst >= 0) { setInst(m.inst, frac); count++; lastPartial = m.inst; } else lastPartial = -1;
+  extMesh.count = count;
+  if (cloud) {
+    const end = m.inst >= 0 ? instPtStart[m.inst] + Math.round((instPtStart[m.inst + 1] - instPtStart[m.inst]) * frac) : instPtStart[m.instBefore];
+    const start = startShown ? 0 : instPtStart[firstPrintInst];
+    cloud.geometry.setDrawRange(start, Math.max(0, end - start));
+  }
+  extMesh.instanceMatrix.needsUpdate = true;
+  travel.geometry.setDrawRange(0, (m.trav >= 0 ? m.trav + 1 : m.travBefore) * 2);
+  nozPos.set(m.x0 + (m.x1 - m.x0) * frac, m.y0 + (m.y1 - m.y0) * frac, m.z0 + (m.z1 - m.z0) * frac);
+  nozzle.position.copy(nozPos);
+  // 噴頭下方的虛線一路打到床面
+  const ud = nozzle.userData;
+  ud.beam.geometry.setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -nozPos.z)]); ud.beam.computeLineDistances();
+  ud.dot.position.z = -nozPos.z + 0.03;
+  if (m.layer !== lastLayer) paint(m.layer);
+  if (wire) updateWireProgress(m, frac, count);
+  scan.visible = false;
+  $('lg').style.display = m.layer > 0 ? '' : 'none';
+  scan.position.z = (data.layers[m.layer]?.z || m.z1) + 0.02;
+  holoMat.uniforms.uLayerZ.value = m.layer > 0 ? (data.layers[m.layer]?.z || m.z1) - (m.h || 0.2) / 2 : -99;
+  updateHUD(m);
+  autoFollow(m);
+}
+
+// ---------- HUD ----------
+const sideHTML = { mode: '' };
+let sideMode = '';
+const CIRC = 2 * Math.PI * 40;
+$('arc').setAttribute('stroke-dasharray', `0 ${CIRC}`);
+let maxF = 1, maxA = 1;
+function updateHUD(m) {
+  const L = data.layers.length - 1;
+  if (!maxF || maxF === 1) { for (const x of data.moves) if (x.layer > 0) { maxF = Math.max(maxF, x.f / 60); maxA = Math.max(maxA, x.acc); } }
+  const p = t / data.total;
+  $('arc').setAttribute('stroke-dasharray', `${p * CIRC} ${CIRC}`);
+  $('pct').textContent = (p * 100).toFixed(1) + '%';
+  $('kLayer').innerHTML = `${m.layer}<small>/${L}</small>`;
+  $('kEl').textContent = fmtT(t);
+  $('kRem').textContent = fmtT(data.total - t);
+  const eta = new Date(Date.now() + (data.total - t) * 1000);
+  $('kEta').textContent = eta.toTimeString().slice(0, 5);
+  $('tNow').textContent = fmtT(t);
+
+  // 即時數據
+  const col = m.extrude ? (PAL()[m.feature] || '#8fa3b0') : m.layer === 0 ? (STAGE_COLOR[m.stage] || '#8fa3b0') : '#ffb547';
+  const fname = m.layer === 0 && !m.extrude ? stageName(m.stage) + (m.len > 1e-6 ? '・移動' : '') : zh(m.feature);
+  const fchip = data.used.length > 1 ? `<span class="tag" style="margin-left:auto"><i class="chip" style="background:${data.fil[m.tool]?.color}"></i>#${m.tool + 1}</span>` : '';
+  $('feat').innerHTML = m.tc && m.layer > 0
+    ? `<i style="color:var(--amb)"></i><span id="tcBadge">換料中　#${m.tcFrom + 1} → #${m.tcTo + 1}</span><span class="tag" style="margin-left:auto"><i class="chip" style="background:${data.fil[m.tcTo]?.color}"></i></span>`
+    : `<i style="color:${col}"></i><span>${fname}</span>${fchip}`;
+  $('spd').textContent = m.vAvg ? m.vAvg.toFixed(0) : '0';
+  const F = m.f / 60;
+  $('bF').style.width = Math.min(100, F / maxF * 100) + '%'; $('vF').textContent = F.toFixed(0) + ' mm/s';
+  $('bA').style.width = Math.min(100, m.acc / maxA * 100) + '%'; $('vA').textContent = m.acc + '';
+  $('pX').textContent = nozPos.x.toFixed(1); $('pY').textContent = nozPos.y.toFixed(1); $('pZ').textContent = nozPos.z.toFixed(2);
+
+  // 層數量尺
+  const lp = m.layer / L;
+  $('lgFill').style.height = lp * 100 + '%';
+  $('lgMk').style.bottom = lp * 100 + '%';
+  $('lgMk').textContent = `L${m.layer}  Z${(data.layers[m.layer]?.z ?? 0).toFixed(1)}`;
+
+  // 時間軸
+  $('fill').style.width = p * 100 + '%';
+  $('head').style.left = p * 100 + '%';
+  $('stageNow').innerHTML = m.tc && m.layer > 0 ? `<span style="color:var(--amb)">⇄ 換料中</span>　#${m.tcFrom + 1} → #${m.tcTo + 1}　第 ${m.layer} 層` : m.layer === 0 ? `<span style="color:var(--amb)">▲ 準備中</span>　${stageName(m.stage)}` : `<span style="color:var(--cy)">● 列印中</span>　第 ${m.layer} 層`;
+
+  // G-code 串流
+  const a = Math.max(0, m.line - 3), b = Math.min(data.lines.length, m.line + 4);
+  let h = '';
+  for (let k = a; k < b; k++) { const txt = data.lines[k].replace(/&/g, '&amp;').replace(/</g, '&lt;').slice(0, 44);
+    h += k === m.line ? `<span class="c"><span class="n">${k + 1}</span>${txt}</span>` : `<span class="n">${k + 1}</span>${txt}\n`; }
+  $('code').innerHTML = h;
+  $('termPos').textContent = `${(m.line + 1).toLocaleString()} / ${data.lines.length.toLocaleString()}`;
+
+  updateSide(m);
+}
+
+function updateSide(m) {
+  const box = $('side');
+  if (m.layer > 0) { box.style.display = 'none'; sideMode = ''; return; }
+  box.style.display = ''; sideMode = 'prep';
+  const prep = data.segments.filter(s => s.code !== 0);
+  let cur = prep.length - 1;
+  for (let k = 0; k < prep.length; k++) if (t >= prep[k].t0) cur = k;
+  // 倒數：目前步驟顯示還剩多久、進度條往回縮（不顯示整體倒數，實機每台每次狀態不同）
+  let h = `<div class="hd"><span class="tag" style="color:var(--amb)">準備程序 PRE-FLIGHT</span><span class="ln"></span></div>`;
+  prep.forEach((p, k) => {
+    const cls = k < cur ? 'done' : k === cur ? 'cur' : '';
+    const ic = k < cur ? '■' : k === cur ? '▶' : '□';
+    const dur = p.t1 - p.t0;
+    const d = k < cur ? '完成' : k === cur ? (dur < 1 ? '--:--' : '-' + fmtT(Math.max(0, p.t1 - t))) : (dur < 1 ? '--:--' : fmtT(dur));
+    h += `<div class="step ${cls}"><span class="ic">${ic}</span><span>${stageName(p.code)}</span><span class="d">${d}</span></div>`;
+    if (k === cur) h += `<div class="sbar"><div style="width:${Math.max(0, 100 - (t - p.t0) / (dur || 1) * 100)}%"></div></div>`;
+  });
+  h += `<div class="temps"><div class="temp"><span class="tag">噴嘴 NOZZLE</span><b>${m.tn || '--'}<small>°C</small></b></div>
+        <div class="temp"><span class="tag">熱床 BED</span><b>${m.tb || '--'}<small>°C</small></b></div></div>`;
+  if (/^等/.test(m.feature)) h += `<div class="waiting">◌ ${m.feature}</div>`;
+  box.innerHTML = h;
+}
+
+// 速度波形：目前時間往回 40 秒
+function drawSpark() {
+  const cv = $('spark'); if (!cv) return; const _ = 0, g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  const span = 40, n = 90;
+  g.strokeStyle = 'rgba(77,226,255,.08)'; g.lineWidth = 1;
+  for (let k = 1; k < 4; k++) { g.beginPath(); g.moveTo(0, H * k / 4); g.lineTo(W, H * k / 4); g.stroke(); }
+  const pts = [];
+  for (let k = 0; k <= n; k++) { const tt = t - span + span * k / n; if (tt < 0) continue;
+    const mm = data.moves[findMove(tt)]; pts.push([W * k / n, H - 3 - (mm.vAvg / maxF) * (H - 6)]); }
+  if (pts.length < 2) return;
+  const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, 'rgba(77,226,255,.35)'); grad.addColorStop(1, 'rgba(77,226,255,0)');
+  g.beginPath(); g.moveTo(pts[0][0], H); for (const [x, y] of pts) g.lineTo(x, y); g.lineTo(pts[pts.length - 1][0], H); g.fillStyle = grad; g.fill();
+  g.beginPath(); pts.forEach(([x, y], k) => k ? g.lineTo(x, y) : g.moveTo(x, y));
+  g.strokeStyle = '#4de2ff'; g.lineWidth = 1.5 * devicePixelRatio; g.shadowColor = '#4de2ff'; g.shadowBlur = 6; g.stroke(); g.shadowBlur = 0;
+  const [lx, ly] = pts[pts.length - 1]; g.fillStyle = '#fff'; g.beginPath(); g.arc(lx - 2, ly, 2.5 * devicePixelRatio, 0, 7); g.fill();
+}
+
+function drawTrack() {
+  const T = data.total;
+  $('segs').innerHTML = data.segments.map(s => `<div title="${stageName(s.code)}　${fmtT(s.t1 - s.t0)}" style="left:${s.t0 / T * 100}%;width:${Math.max(0.15, (s.t1 - s.t0) / T * 100)}%;background:${STAGE_COLOR[s.code] || '#8fa3b0'}"></div>`).join('');
+  const L = data.layers.length - 1, step = L > 200 ? 50 : 10;
+  let h = ''; for (let l = step; l <= L; l += step) if (layerStart[l] !== undefined) h += `<div style="left:${layerStart[l] / T * 100}%"></div>`;
+  for (const c of data.toolChanges) { const m = data.moves[c.move]; if (!m || m.layer === 0) continue;
+    h += `<div title="換料 #${c.from + 1} → #${c.to + 1}" style="left:${m.t0 / T * 100}%;top:-13px;height:8px;width:3px;background:${data.fil[c.to]?.color};box-shadow:0 0 4px ${data.fil[c.to]?.color}"></div>`; }
+  $('ticks').innerHTML = h;
+}
+
+// 噴頭旁的標籤：每一格畫面都重新投影到螢幕
+function updateAnnos() {
+  const show = data && !intro && $('renderMode').value !== 'solid' && $('showCall').checked;
+  annos.forEach((a, i) => {
+    const el = $('an' + i), pl = $('al' + i), c = $('ac' + i); if (!el) return;
+    const v = a.p.clone().project(camera);
+    if (!show || v.z > 1) { el.style.display = 'none'; pl.setAttribute('points', ''); c.setAttribute('r', 0); return; }
+    const x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight, lx = x + a.dx, ly = y - a.dy;
+    el.style.display = ''; el.style.left = lx + 'px'; el.style.top = (ly - 4) + 'px';
+    pl.setAttribute('points', `${x},${y} ${x},${ly + (a.dy > 0 ? 18 : 0)} ${lx},${ly}`); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 2);
+  });
+}
+function updateCallout() {
+  updateAnnos();
+  const show = data && $('showCall').checked;
+  const cEl = $('callout');
+  if (!show) { cEl.classList.add('hide'); $('leadL').setAttribute('stroke-opacity', 0); $('leadC').setAttribute('r', 0); return; }
+  const v = nozPos.clone().project(camera);
+  if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) { cEl.classList.add('hide'); $('leadL').setAttribute('stroke-opacity', 0); return; }
+  const x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+  const lx = x + 46, ly = y - 54;
+  const m = data.moves[curMove];
+  cEl.classList.remove('hide');
+  cEl.style.left = lx + 'px'; cEl.style.top = (ly - 14) + 'px';
+  cEl.innerHTML = m.layer === 0 ? `<b>${stageName(m.stage)}</b><br>${m.tn ? m.tn + '°C' : ''}` :
+    m.tc ? `<b style="color:var(--amb)">換料中</b>　#${m.tcFrom + 1} → #${m.tcTo + 1}` :
+    `<b>${zh(m.feature)}</b>　${(m.vAvg || 0).toFixed(0)} mm/s${data.used.length > 1 ? `　<i class="chip" style="background:${data.fil[m.tool]?.color}"></i>` : ''}<br>L${m.layer} · Z${nozPos.z.toFixed(2)}`;
+  const L = $('leadL'); L.setAttribute('x1', x); L.setAttribute('y1', y); L.setAttribute('x2', lx); L.setAttribute('y2', ly); L.setAttribute('stroke-opacity', .7);
+  const C = $('leadC'); C.setAttribute('cx', x); C.setAttribute('cy', y); C.setAttribute('r', 3);
+}
+
+function applyToggles() { travel.visible = $('showTravel').checked; ghost.visible = $('showGhost').checked; }
+
+// ---------- 熱床外形：用 OrcaSlicer 的熱床模型（bed/），沒有對應的機型就只畫可列印範圍 ----------
+const BED_MODELS = [[/Bambu Lab (A1|X1|P1)(?! mini)/i, { stl: 'bed/bbl-3dp-X1.stl', svg: 'bed/bbl-3dp-logo.svg' }]];
+let plate;
+function parseSTL(buf) {
+  const dv = new DataView(buf), n = dv.getUint32(80, true), pos = new Float32Array(n * 9);
+  for (let i = 0; i < n; i++) for (let k = 0; k < 9; k++) pos[i * 9 + k] = dv.getFloat32(84 + i * 50 + 12 + k * 4, true);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
+}
+async function buildPlate() {
+  if (plate) { scene.remove(plate); plate = null; }
+  const model = data.meta.config.printer_model || '';
+  const hit = BED_MODELS.find(([r]) => r.test(model));
+  if (!hit) return;
+  try {
+    const g = parseSTL(await (await fetch(hit[1].stl)).arrayBuffer());
+    g.computeBoundingBox(); const bb = g.boundingBox;
+    plate = new THREE.Group();
+    const body = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#0b1822', transparent: true, opacity: 0.85, depthWrite: false }));
+    body.renderOrder = -12;
+    // 只留外輪廓（板子邊緣）
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.35 }));
+    edges.renderOrder = -9;
+    plate.add(body, edges);
+    // 板面圖案（logo、刻度）：讀 SVG 當成透明度貼圖，染成青色
+    const img = new Image(); img.src = hit[1].svg;
+    await img.decode();
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = Math.round(1024 * img.height / img.width);
+    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, cv.width, cv.height);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const w = bb.max.x - bb.min.x, h = bb.max.y - bb.min.y;
+    const deco = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, color: '#4de2ff', transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }));
+    deco.position.set((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, 0.01); deco.renderOrder = -8;
+    plate.add(deco);
+    scene.add(plate);
+  } catch (e) { console.warn('熱床模型載入失敗', e); }
+}
+
+// ---------- 準備區域：從起始程序的段落算出清潔、擠料、調平等工作區 ----------
+const ZONE_ZH = [
+  [/bed leveling/i, '自動調平'], [/brush/i, '刷頭清潔'], [/remove waste|touching/i, '碰觸除料'], [/wipe nozzle/i, '鋼片擦拭'],
+  [/extrude cali test/i, '擠出測試線'], [/auto extrude cali/i, '擠出校準'], [/mech mode|vibration/i, '共振檢查'],
+  [/prepare print temperature|material/i, '加熱擠料'], [/nozzle load line/i, '擠料線'], [/home/i, '歸零'],
+];
+const zoneName = n => (ZONE_ZH.find(([r]) => r.test(n)) || [0, n])[1];
+let zones = [], zoneGroup, printFrame, probeDots;
+function buildZones() {
+  if (zoneGroup) scene.remove(zoneGroup);
+  zoneGroup = new THREE.Group(); scene.add(zoneGroup); zones = [];
+  const secs = data.sections || [];
+  // 每段只看噴頭「真的在工作」的點：低處（Z<3）或有擠料
+  const pts = secs.map(() => []);
+  for (const m of data.moves) if (m.layer === 0 && m.sec >= 0 && (m.z1 < 3 || m.e > 0)) pts[m.sec].push(m.x1, m.y1);
+  secs.forEach((sec, i) => {
+    let x0, y0, x1, y1;
+    if (/bed leveling/i.test(sec.name) && data.g29) { ({ x: x0, y: y0 } = data.g29); x1 = x0 + data.g29.w; y1 = y0 + data.g29.h; }
+    else { const p = pts[i]; if (p.length < 4) return;
+      x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity;
+      for (let k = 0; k < p.length; k += 2) { x0 = Math.min(x0, p[k]); x1 = Math.max(x1, p[k]); y0 = Math.min(y0, p[k + 1]); y1 = Math.max(y1, p[k + 1]); }
+      if (x1 - x0 > 120 || y1 - y0 > 120) return;   // 範圍太大代表是跨區移動，不當成工作區
+      const pad = 2.5; x0 -= pad; y0 -= pad; x1 += pad; y1 += pad; }
+    const w = Math.max(4, x1 - x0), h = Math.max(4, y1 - y0), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const fill = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.04, depthWrite: false }));
+    fill.position.set(cx, cy, 0.06);
+    const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]].map(q => new THREE.Vector3(q[0], q[1], 0))),
+      new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.4 }));
+    line.position.set(cx, cy, 0.07);
+    fill.renderOrder = line.renderOrder = 3;
+    zoneGroup.add(fill, line);
+    zones.push({ sec: i, name: zoneName(sec.name), fill, line, c: new THREE.Vector3(cx, cy + h / 2, 0.1) });
+  });
+  // 可列印範圍外框
+  const area = (data.meta.config.printable_area || '0x0,256x0,256x256,0x256').split(',').map(q => q.split('x').map(Number));
+  printFrame = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(area.map(q => new THREE.Vector3(q[0], q[1], 0.04))),
+    new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.22 }));
+  zoneGroup.add(printFrame);
+  // 調平探測點
+  if (data.g29) { const g = data.g29, nx = Math.max(2, Math.round(g.w / 10) + 1), ny = Math.max(2, Math.round(g.h / 10) + 1), pp = [];
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) pp.push(g.x + g.w * i / (nx - 1), g.y + g.h * (j % 2 ? (ny - 1 - 0) : 0) / 1 * 0 + g.h * j / (ny - 1), 0.12);
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3));
+    pg.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pp.length), 3));
+    probeDots = new THREE.Points(pg, new THREE.PointsMaterial({ size: 1.6, vertexColors: true, map: dotTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    probeDots.renderOrder = 4; zoneGroup.add(probeDots); } else probeDots = null;
+  $('zoneBox').innerHTML = zones.map((z, i) => `<div class="zlab" id="zl${i}">${z.name}</div>`).join('');
+}
+function zoneOf(sec) { const secs = data.sections; while (sec >= 0) { const z = zones.findIndex(q => q.sec === sec); if (z >= 0) return z; sec = secs[sec].parent; } return -1; }
+function updateZones(now) {
+  if (!zoneGroup || !data) return;
+  const m = data.moves[curMove], show = !intro && m && m.layer === 0;
+  zoneGroup.visible = show;
+  const act = show ? zoneOf(m.sec) : -1, pulse = 0.5 + 0.5 * Math.sin(now / 160);
+  zones.forEach((z, i) => {
+    const on = i === act;
+    z.line.material.color.set(on ? '#ffb547' : '#4de2ff'); z.line.material.opacity = on ? 0.6 + 0.4 * pulse : 0.35;
+    z.fill.material.color.set(on ? '#ffb547' : '#4de2ff'); z.fill.material.opacity = on ? 0.08 + 0.08 * pulse : 0.03;
+    const el = $('zl' + i); if (!el) return;
+    if (!show) { el.style.display = 'none'; return; }
+    const v = z.c.clone().project(camera);
+    if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) { el.style.display = 'none'; return; }
+    el.style.display = ''; el.classList.toggle('on', on);
+    el.style.left = (v.x + 1) / 2 * innerWidth + 'px'; el.style.top = ((1 - v.y) / 2 * innerHeight - 4) + 'px';
+  });
+  // 調平時探測點依序亮起
+  if (probeDots) { const leveling = act >= 0 && /調平/.test(zones[act].name), col = probeDots.geometry.attributes.color, n = col.count, k = Math.floor(now / 140) % n;
+    for (let i = 0; i < n; i++) { const b = leveling ? (i === k ? 1.6 : i < k ? 0.55 : 0.18) : 0.25; col.setXYZ(i, b * (leveling ? 1 : 0.3), b * (leveling ? 0.71 : 0.89), b * (leveling ? 0.28 : 1)); }
+    col.needsUpdate = true; }
+}
+
+// ---------- 外殼：用每層外牆輪廓擠出近似的模型形狀（開場用） ----------
+let shell, shellLayerEnd;
+function buildShell() {
+  if (shell) { scene.remove(shell); shell.geometry.dispose(); }
+  const moves = data.moves, NL = data.layers.length;
+  // 1) 每層收集外牆的連續路徑成一圈一圈
+  const loops = Array.from({ length: NL }, () => []);
+  let cur = null;
+  for (const m of moves) {
+    if (m.layer > 0 && m.extrude && m.feature === 'Outer wall') {
+      if (!cur || cur.layer !== m.layer || cur.tool !== m.tool || Math.hypot(m.x0 - cur.ex, m.y0 - cur.ey) > 0.05) {
+        cur = { layer: m.layer, z: m.z1, h: m.h, tool: m.tool, pts: [[m.x0, m.y0]] }; loops[m.layer].push(cur);
+      }
+      cur.pts.push([m.x1, m.y1]); cur.ex = m.x1; cur.ey = m.y1;
+    } else if (m.len > 1e-6) cur = null;
+  }
+  const area = p => { let a = 0; for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; } return a / 2; };
+  const inside = ([x, y], p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const [xi, yi] = p[i], [xj, yj] = p[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
+  // 2) 判斷外框／孔（被幾圈包住），擠出一層高
+  const pos = [], nor = [], vcol = [];
+  const tint = new THREE.Color('#9fdcef'), tc = new THREE.Color();
+  shellLayerEnd = new Int32Array(NL + 1);
+  for (let l = 0; l < NL; l++) {
+    const ls = loops[l].filter(o => o.pts.length >= 4 && Math.abs(area(o.pts)) > 0.5);
+    for (const o of ls) { const f = o.pts[0], e = o.pts[o.pts.length - 1]; if (Math.hypot(f[0] - e[0], f[1] - e[1]) < 0.3) o.pts.pop(); o.A = Math.abs(area(o.pts)); o.depth = 0; }
+    for (const o of ls) for (const q of ls) if (q !== o && q.A > o.A && inside(o.pts[0], q.pts)) o.depth++;
+    for (const o of ls) {
+      if (o.depth % 2) continue;
+      const shape = new THREE.Shape(o.pts.map(([x, y]) => new THREE.Vector2(x, y)));
+      for (const q of ls) if (q.depth === o.depth + 1 && inside(q.pts[0], o.pts)) shape.holes.push(new THREE.Path(q.pts.map(([x, y]) => new THREE.Vector2(x, y))));
+      const g = new THREE.ExtrudeGeometry(shape, { depth: o.h, bevelEnabled: false, steps: 1 });
+      g.translate(0, 0, o.z - o.h);
+      const gp = g.attributes.position.array, gn = g.attributes.normal.array;
+      tc.set(data.fil[o.tool]?.color || '#d8e6ee').lerp(tint, 0.12);
+      for (let i = 0; i < gp.length; i++) { pos.push(gp[i]); nor.push(gn[i]); }
+      for (let i = 0; i < gp.length / 3; i++) vcol.push(tc.r, tc.g, tc.b);
+      g.dispose();
+    }
+    shellLayerEnd[l + 1] = pos.length / 3;
+  }
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  sg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  sg.setAttribute('color', new THREE.Float32BufferAttribute(vcol, 3));
+  shell = new THREE.Mesh(sg, new THREE.ShaderMaterial({ vertexColors: true,
+    uniforms: { uRim: { value: new THREE.Color('#4de2ff') } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vC;
+      void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = cameraPosition - wp.xyz;
+        #ifdef USE_COLOR
+          vC = color;
+        #else
+          vC = vec3(0.8);
+        #endif
+        gl_Position = projectionMatrix * viewMatrix * wp; }`,
+    fragmentShader: `uniform vec3 uRim; varying vec3 vN; varying vec3 vV; varying vec3 vC;
+      void main() { vec3 N = normalize(vN), V = normalize(vV);
+        float l = 0.35 + 0.45 * max(dot(N, normalize(vec3(-0.4, -0.6, 0.8))), 0.0) + 0.2 * max(N.z, 0.0);
+        float fres = pow(1.0 - abs(dot(N, V)), 2.0);
+        gl_FragColor = vec4(vC * l * 0.75 + uRim * fres * 0.7, 1.0); }` }));
+  shell.visible = false;
+  scene.add(shell);
+}
+
+// ---------- 開場動畫：鏡頭旋轉拉近 → 點雲由下往上長 → 實體由下往上填 ----------
+let intro = null, homePose;
+const ease = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const easeOut = x => 1 - Math.pow(1 - x, 3);
+const clamp01 = x => Math.min(1, Math.max(0, x));
+function startIntro() {
+  const T1 = homePose.tgt.clone(), v = homePose.pos.clone().sub(T1);
+  const r = v.length(), az = Math.atan2(v.y, v.x), el = Math.atan2(v.z, Math.hypot(v.x, v.y));
+  intro = { t0: performance.now(), T1, r, az, el, L: data.layers.length - 1, keepT: t };
+  controls.enabled = false;
+  $('hudRoot').classList.add('intro');
+  $('introTxt').style.opacity = 1;
+  extMesh.visible = true; cloud.visible = true; ghost.visible = false; wire.visible = false; curWire.visible = false; travel.visible = false; nozzle.visible = false;
+  $('callout').classList.add('hide');
+  startShown = false;
+  for (let k = 0; k < firstPrintInst; k++) setInst(k, 1);   // 起始程序的路徑先藏起來
+  if (lastPartial >= 0) { setInst(lastPartial, 1); lastPartial = -1; }
+  extMesh.instanceMatrix.needsUpdate = true;
+  paint(0);   // 點雲維持原本的顏色
+  extMesh.visible = false; shell.visible = true; shell.geometry.setDrawRange(0, 0);
+}
+function stepIntro(now) {
+  const I = intro, e = (now - I.t0) / 1000;
+  const DUR = 5.2;
+  // 鏡頭：從遠、高、轉了大半圈的位置，邊轉邊拉近
+  const c = easeOut(clamp01(e / 4.2));
+  const r = I.r * (3.4 - 2.4 * c), az = I.az + (1 - c) * Math.PI * 1.25, el = I.el + (1 - c) * 0.45;
+  camera.position.set(I.T1.x + r * Math.cos(el) * Math.cos(az), I.T1.y + r * Math.cos(el) * Math.sin(az), I.T1.z + r * Math.sin(el));
+  camera.lookAt(I.T1);
+  // 點雲往上長（0.3–2.9 秒），實體往上填（2.4–4.6 秒）
+  const cl = Math.round(ease(clamp01((e - 0.3) / 2.6)) * I.L);
+  const sl = Math.round(ease(clamp01((e - 2.4) / 2.2)) * I.L);
+  const cloudEnd = instPtStart[layerInst[Math.min(cl + 1, I.L + 1)]];
+  const cloudStart = instPtStart[layerInst[Math.min(sl + 1, I.L + 1)]];
+  cloud.geometry.setDrawRange(cloudStart, Math.max(0, cloudEnd - cloudStart));
+  shell.geometry.setDrawRange(0, shellLayerEnd[Math.min(sl + 1, I.L + 1)]);
+  const front = e < 2.4 ? cl : sl;
+  scan.visible = false;
+  scan.position.z = (data.layers[front]?.z || 0) + 0.02;
+  $('introTxt').innerHTML = `${e < 2.4 ? 'SCANNING GEOMETRY' : 'MATERIALIZING'}<b>${$('fname').textContent}</b>LAYER ${String(front).padStart(3, '0')} / ${I.L}<div class="sk">點一下或按任意鍵跳過</div>`;
+  if (e >= DUR) endIntro();
+}
+function endIntro() {
+  if (!intro) return;
+  const I = intro; intro = null;
+  camera.position.set(I.T1.x + I.r * Math.cos(I.el) * Math.cos(I.az), I.T1.y + I.r * Math.cos(I.el) * Math.sin(I.az), I.T1.z + I.r * Math.sin(I.el));
+  controls.target.copy(I.T1); controls.enabled = true; controls.update();
+  $('hudRoot').classList.remove('intro');
+  $('introTxt').style.opacity = 0;
+  nozzle.visible = true; shell.visible = false;
+  applyToggles(); applyRender();
+  lastLayer = -1; startShown = null;
+  setTime(t);
+}
+addEventListener('pointerdown', () => { if (intro) endIntro(); }, true);
+addEventListener('keydown', e => { if (intro) { e.stopImmediatePropagation(); endIntro(); } }, true);
+
+// ---------- 噴頭跟隨模式 ----------
+// 鏡頭拉近到噴頭附近，平滑跟著跑；還是可以拖曳換角度、滾輪調遠近
+let follow = null;   // { home: 全景時的鏡頭, fly: 飛行動畫 }
+function toggleFollow(on = !follow, auto = false) {
+  if (intro) return;
+  if (!on && follow && auto && !follow.auto) return;   // 自己開的跟隨，不自動關
+  $('followBtn').classList.toggle('on', on);
+  if (on) {
+    const home = { pos: camera.position.clone(), tgt: controls.target.clone() };
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    dir.z = Math.max(dir.z, 0.45); dir.normalize();
+    if (follow) { follow.auto = follow.auto && auto; return; }
+    follow = { auto, home: auto && homePose ? { pos: homePose.pos.clone(), tgt: homePose.tgt.clone() } : home, dist: auto ? 150 : 38, fly: { t0: performance.now(), p0: camera.position.clone(), q0: controls.target.clone(), dir } };
+  } else if (follow) {
+    const h = follow.home; follow = null;
+    flyBack = { t0: performance.now(), p0: camera.position.clone(), q0: controls.target.clone(), p1: h.pos, q1: h.tgt };
+  }
+}
+let flyBack = null;
+function stepCamera(now, dt) {
+  // 格線中心：跟隨時跟著噴頭，平常圍著模型
+  { const gc = gridMat.uniforms.uCenter.value, tx = follow ? controls.target.x : gridHome.x, ty = follow ? controls.target.y : gridHome.y, k = 1 - Math.exp(-dt * 4);
+    gc.x += (tx - gc.x) * k; gc.y += (ty - gc.y) * k; }
+  // 噴頭標記依鏡頭距離縮放，螢幕上看起來一樣大
+  if (nozzle) nozzle.scale.setScalar(THREE.MathUtils.clamp(camera.position.distanceTo(nozzle.position) / 120, 0.15, 6));
+  if (follow) {
+    if (follow.fly) {
+      const f = follow.fly, k = ease(clamp01((now - f.t0) / (follow.auto ? 1800 : 1100)));
+      const tgt = nozPos.clone(), pos = nozPos.clone().addScaledVector(f.dir, follow.dist);
+      controls.target.lerpVectors(f.q0, tgt, k); camera.position.lerpVectors(f.p0, pos, k);
+      if (k >= 1) follow.fly = null;
+    } else {
+      // 目標點用阻尼追噴頭，鏡頭跟著平移（保留使用者轉的角度）
+      // 準備階段（自動跟隨）：拉遠、慢慢跟，噴頭在中央 25mm 內移動時不動，避免快速來回讓畫面晃
+      const d = nozPos.clone().sub(controls.target);
+      if (follow.auto) { d.z *= 0.3; const len = Math.hypot(d.x, d.y), dead = 10;
+        d.multiplyScalar(len > dead ? (1 - dead / len) * (1 - Math.exp(-dt * 3.2)) : 0); }
+      else d.multiplyScalar(1 - Math.exp(-dt * 7));
+      controls.target.add(d); camera.position.add(d);
+    }
+  } else if (flyBack) {
+    const f = flyBack, k = ease(clamp01((now - f.t0) / 1000));
+    controls.target.lerpVectors(f.q0, f.q1, k); camera.position.lerpVectors(f.p0, f.p1, k);
+    if (k >= 1) flyBack = null;
+  }
+}
+let prepOptOut = false;   // 準備階段使用者自己關掉跟隨，就不再自動開
+function userToggleFollow() { if (follow) { if (follow.auto) prepOptOut = true; follow.auto = false; toggleFollow(false); } else toggleFollow(true); }
+$('followBtn').onclick = userToggleFollow;
+// 準備階段自動跟隨噴頭，開始印第一層時自動回全景
+function autoFollow(m) { if (intro || !data) return;
+  if (m.layer === 0) { if (!follow && !prepOptOut) toggleFollow(true, true); }
+  else { prepOptOut = false; if (follow && follow.auto) toggleFollow(false, true); } }
+addEventListener('keydown', e => { if (e.code === 'KeyF' && data && !intro) userToggleFollow(); });
+
+// ---------- 控制 ----------
+$('replayBtn').onclick = () => { if (!intro) { if (follow) { follow = null; $('followBtn').classList.remove('on'); } flyBack = null; startIntro(); } };
+$('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '❚❚' : '▶'; if (playing && t >= data.total) setTime(0); };
+function scrub(e) { const r = $('track').getBoundingClientRect(); setTime(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * data.total); }
+$('track').addEventListener('pointerdown', e => { $('track').setPointerCapture(e.pointerId); scrub(e); });
+$('track').addEventListener('pointermove', e => { if (e.buttons) scrub(e); });
+function scrubLayer(e) { const r = $('lg').getBoundingClientRect(); const L = data.layers.length - 1;
+  const l = Math.round(Math.min(1, Math.max(0, (r.bottom - e.clientY) / r.height)) * L); if (layerStart[l] !== undefined) setTime(layerStart[l] + 0.01); }
+$('lg').addEventListener('pointerdown', e => { $('lg').setPointerCapture(e.pointerId); scrubLayer(e); });
+$('lg').addEventListener('pointermove', e => { if (e.buttons) scrubLayer(e); });
+$('colorMode').onchange = recolor;
+$('renderMode').onchange = applyRender;
+$('showTravel').onchange = $('showGhost').onchange = applyToggles;
+$('dimPast').onchange = () => paint(curLayer());
+$('showStart').onchange = () => setTime(t);
+$('setBtn').onclick = () => { $('settings').style.display = $('settings').style.display === 'block' ? 'none' : 'block'; $('setBtn').classList.toggle('on'); };
+$('openBtn').onclick = () => $('file').click();
+const RATES = [1, 10, 30, 100, 300];
+$('ctl').innerHTML = RATES.map(r => `<button class="btn ${r === rate ? 'on' : ''}" data-r="${r}">${r}×</button>`).join('');
+$('ctl').onclick = e => { const r = e.target.dataset.r; if (!r) return; rate = +r;
+  $('ctl').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.r === rate)); };
+addEventListener('keydown', e => {
+  if (!data || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
+  if (e.code === 'ArrowRight') setTime(t + (e.shiftKey ? 60 : 5));
+  if (e.code === 'ArrowLeft') setTime(t - (e.shiftKey ? 60 : 5));
+  if (e.code === 'ArrowUp') { const l = Math.min(data.layers.length - 1, curLayer() + 1); if (layerStart[l] !== undefined) setTime(layerStart[l] + 0.01); }
+  if (e.code === 'ArrowDown') { const l = Math.max(0, curLayer() - 1); if (layerStart[l] !== undefined) setTime(layerStart[l] + 0.01); }
+});
+
+let last = performance.now();
+let loopErr = null;
+renderer.setAnimationLoop(now => { try { loop(now); } catch (e) { if (!loopErr) { loopErr = e; console.error(e); document.title = 'ERR ' + e.message; } } });
+function loop(now) {
+  const dt = (now - last) / 1000; last = now;
+  if (intro) stepIntro(now);
+  else if (data && playing) { setTime(t + dt * rate); if (t >= data.total) $('play').click(); }
+  if (nozzle) { const ud = nozzle.userData, k = (now / 900) % 1;
+    ud.ring.material.opacity = 0.4 + 0.35 * Math.sin(now / 180);
+    ud.ring2.scale.setScalar(1 + k * 0.8); ud.ring2.material.opacity = 0.35 * (1 - k); }
+  if (!intro) { stepCamera(now, dt); controls.update(); }
+  updateWireFade();
+  if (bloom.strength > 0) composer.render(); else renderer.render(scene, camera);
+  if (!intro) updateCallout(); else updateAnnos();
+  updateZones(now);
+}
+resize();
+
+// ---------- 載入檔案 ----------
+async function openBuffer(buf, name) {
+  let text, thumb, objName;
+  if (/\.3mf$/i.test(name)) {
+    const files = await readZip(buf);
+    const g = Object.keys(files).find(n => /plate_\d+\.gcode$/.test(n)) || Object.keys(files).find(n => n.endsWith('.gcode'));
+    if (!g) throw new Error('3mf 裡沒有 G-code（是不是還沒切片？）');
+    text = new TextDecoder().decode(await files[g]());
+    const png = g.replace('.gcode', '.png');
+    if (files[png]) thumb = URL.createObjectURL(new Blob([await files[png]()], { type: 'image/png' }));
+    if (files['Metadata/slice_info.config']) { const x = new TextDecoder().decode(await files['Metadata/slice_info.config']());
+      objName = (x.match(/<object [^>]*name="([^"]+)"/) || [])[1]; }
+  } else text = new TextDecoder().decode(buf);
+  $('thumb').style.display = thumb ? '' : 'none'; if (thumb) $('thumb').src = thumb;
+  const d = parseGcode(text); d.objName = objName;
+  maxF = 1; maxA = 1;
+  load(d, name.split('/').pop());
+}
+async function openFile(file) {
+  try { await openBuffer(await file.arrayBuffer(), file.name); } catch (e) { alert('讀不了這個檔案：' + e.message); console.error(e); }
+}
+$('file').onchange = e => e.target.files[0] && openFile(e.target.files[0]);
+view.addEventListener('dragover', e => { e.preventDefault(); $('drop').classList.add('hl'); });
+view.addEventListener('dragleave', () => $('drop').classList.remove('hl'));
+view.addEventListener('drop', e => { e.preventDefault(); $('drop').classList.remove('hl'); const f = e.dataTransfer.files[0]; if (f) openFile(f); });
+
+const qs = new URLSearchParams(location.search);
+if (qs.get('file')) fetch(qs.get('file')).then(r => r.arrayBuffer()).then(b => openBuffer(b, qs.get('file'))).then(() => {
+  if (qs.get('color')) { $('colorMode').value = qs.get('color'); recolor(); }
+  if (qs.get('render')) { $('renderMode').value = qs.get('render'); applyRender(); }
+  if (qs.get('travel')) { $('showTravel').checked = true; applyToggles(); }
+  if (qs.get('at')) setTime(+qs.get('at'));
+  if (qs.get('zoom')) { const z = +qs.get('zoom'), T = homePose.tgt; homePose.pos.sub(T).multiplyScalar(z).add(T); if (intro) intro.r *= z; else { camera.position.copy(homePose.pos); controls.update(); } }
+  if (qs.get('rot')) { const r = +qs.get('rot') * Math.PI / 180, T = homePose.tgt, v = homePose.pos.clone().sub(T);
+    homePose.pos.copy(T).add(v.applyAxisAngle(new THREE.Vector3(0, 0, 1), r)); if (intro) intro.az += r; else { camera.position.copy(homePose.pos); controls.update(); } }
+}).catch(e => console.error(e));
+
+</script>
+</body>
+</html>

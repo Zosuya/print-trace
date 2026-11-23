@@ -198,6 +198,8 @@
       <button class="btn" id="setBtn">顯示設定</button>
       <button class="btn" id="followBtn">跟隨噴頭 F</button>
       <button class="btn" id="replayBtn">重播開場</button>
+      <span class="btn hide" id="liveBadge" style="cursor:default"></span>
+      <button class="btn hide" id="backLive">回到即時</button>
     </div>
 
     <div id="prog" class="pane">
@@ -227,6 +229,11 @@
         <div><div class="tag">X</div><div class="v" id="pX">0</div></div>
         <div><div class="tag">Y</div><div class="v" id="pY">0</div></div>
         <div><div class="tag">Z</div><div class="v" id="pZ">0</div></div>
+      </div>
+      <div class="grid3 hide" id="liveTemps">
+        <div><div class="tag">噴嘴 NOZZLE</div><div class="v" id="pN">--</div></div>
+        <div><div class="tag">熱床 BED</div><div class="v" id="pB">--</div></div>
+        <div><div class="tag">速度 SPEED</div><div class="v" id="pS">--</div></div>
       </div>
     </div>
 
@@ -1068,6 +1075,7 @@ function updateHUD(m) {
   $('code').innerHTML = h;
   $('termPos').textContent = `${(m.line + 1).toLocaleString()} / ${data.lines.length.toLocaleString()}`;
 
+  if (live.on) liveHUD(m);
   updateSide(m);
 }
 
@@ -1078,6 +1086,8 @@ function updateSide(m) {
   const prep = data.segments.filter(s => s.code !== 0);
   let cur = prep.length - 1;
   for (let k = 0; k < prep.length; k++) if (t >= prep[k].t0) cur = k;
+  // 即時模式：目前步驟以印表機回報的 stg_cur 為準
+  if (live.on && live.follow && live.st?.stg_cur > 0) { for (let k = 0; k < prep.length; k++) if (prep[k].code === live.st.stg_cur && k <= cur + 1) cur = k; }
   // 倒數：目前步驟顯示還剩多久、進度條往回縮（不顯示整體倒數，實機每台每次狀態不同）
   let h = `<div class="hd"><span class="tag" style="color:var(--amb)">準備程序 PRE-FLIGHT</span><span class="ln"></span></div>`;
   prep.forEach((p, k) => {
@@ -1088,8 +1098,10 @@ function updateSide(m) {
     h += `<div class="step ${cls}"><span class="ic">${ic}</span><span>${stageName(p.code)}</span><span class="d">${d}</span></div>`;
     if (k === cur) h += `<div class="sbar"><div style="width:${Math.max(0, 100 - (t - p.t0) / (dur || 1) * 100)}%"></div></div>`;
   });
-  h += `<div class="temps"><div class="temp"><span class="tag">噴嘴 NOZZLE</span><b>${m.tn || '--'}<small>°C</small></b></div>
-        <div class="temp"><span class="tag">熱床 BED</span><b>${m.tb || '--'}<small>°C</small></b></div></div>`;
+  const P = live.on && live.follow ? live.st : null;
+  const tv = (cur, tgt) => P ? `${Math.round(cur ?? 0)}<small>/${Math.round(tgt ?? 0)}°C</small>` : `${tgt || '--'}<small>°C</small>`;
+  h += `<div class="temps"><div class="temp"><span class="tag">噴嘴 NOZZLE</span><b>${tv(P?.nozzle_temper, P ? P.nozzle_target_temper : m.tn)}</b></div>
+        <div class="temp"><span class="tag">熱床 BED</span><b>${tv(P?.bed_temper, P ? P.bed_target_temper : m.tb)}</b></div></div>`;
   if (/^等/.test(m.feature)) h += `<div class="waiting">◌ ${m.feature}</div>`;
   box.innerHTML = h;
 }
@@ -1474,6 +1486,7 @@ renderer.setAnimationLoop(now => { try { loop(now); } catch (e) { if (!loopErr) 
 function loop(now) {
   const dt = (now - last) / 1000; last = now;
   if (intro) stepIntro(now);
+  else if (live.on) stepLive(dt);
   else if (data && playing) { setTime(t + dt * rate); if (t >= data.total) $('play').click(); }
   if (nozzle) { const ud = nozzle.userData, k = (now / 900) % 1;
     ud.ring.material.opacity = 0.4 + 0.35 * Math.sin(now / 180);
@@ -1485,6 +1498,96 @@ function loop(now) {
   updateZones(now);
 }
 resize();
+
+// ---------- 即時模式：從後端（server.mjs）的 SSE 拿印表機狀態 ----------
+// 位置的來源（由準到粗）：mc_print_line_number（正在執行第幾行）→ layer_num（換層對齊＋G-code 時間往前推）→ stg_cur（準備步驟）
+const live = { on: false, st: null, fileUrl: null, follow: true, ref: null, layer: -1, layerAt: 0, stage: -1, stageAt: 0, lastLine: -1 };
+const STATE_ZH = { IDLE: '待機中', PREPARE: '準備中', RUNNING: '列印中', PAUSE: '已暫停', FINISH: '已完成', FAILED: '列印失敗', SLICING: '切片中' };
+function lineToMove(line) {   // 找「行號 ≤ line」的最後一個移動
+  const mv = data.moves; let lo = 0, hi = mv.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (mv[mid].line <= line) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+function onLiveStatus(s) {
+  live.st = s.print || {};
+  const p = live.st, now = performance.now();
+  const ln = +p.mc_print_line_number || 0;
+  if (data && ln > 0 && ln !== live.lastLine) { live.lastLine = ln; const m = data.moves[lineToMove(ln - 1)]; live.ref = { t: m.t0, at: now }; }
+  if (p.layer_num !== live.layer) { live.layer = p.layer_num; live.layerAt = now; }
+  if (p.stg_cur !== live.stage) { live.stage = p.stg_cur; live.stageAt = now; }
+  // 狀態標示
+  const b = $('liveBadge'); b.classList.remove('hide');
+  b.innerHTML = s.connected ? `<span style="color:${p.gcode_state === 'RUNNING' ? '#5ef2a0' : p.gcode_state === 'PAUSE' || p.gcode_state === 'FAILED' ? '#ff5d5d' : '#ffb547'}">●</span> ${s.sim ? 'SIM' : 'LIVE'}　${STATE_ZH[p.gcode_state] || p.gcode_state || '—'}`
+    : '<span style="color:#ff5d5d">●</span> 印表機未連線';
+  if (!data) idleScreen(s);
+}
+function liveTarget() {
+  const p = live.st, now = performance.now(), spd = (p.spd_mag || 100) / 100;
+  if (p.gcode_state === 'FINISH') return data.total;
+  if (p.gcode_state === 'IDLE') return t;
+  const paused = p.gcode_state === 'PAUSE';
+  if (live.ref && +p.mc_print_line_number > 0) {
+    // 有行號：從那一行的時間往前推，最多推 6 秒（等下一次回報校正）
+    return live.ref.t + (paused ? 0 : Math.min(6, (now - live.ref.at) / 1000 * spd));
+  }
+  const L = p.layer_num || 0;
+  if (L > 0 && layerStart[L] !== undefined) {
+    const s0 = layerStart[L], s1 = layerStart[L + 1] ?? data.total;
+    return Math.min(s1 - 0.05, s0 + (paused ? 0 : (now - live.layerAt) / 1000 * spd));
+  }
+  const seg = data.segments.find(q => q.code === p.stg_cur && q.code !== 0);
+  if (seg) return Math.min(seg.t1 - 0.05, seg.t0 + (now - live.stageAt) / 1000);
+  return t;
+}
+function stepLive(dt) {
+  if (!live.on || !live.st || !data || intro || !live.follow) return;
+  const tgt = liveTarget(), d = tgt - t;
+  // 小差距平滑追上，大差距（剛連上、跳行）直接跳過去
+  if (Math.abs(d) > 30) setTime(tgt); else if (Math.abs(d) > 0.001) setTime(t + d * (1 - Math.exp(-dt * 5)));
+}
+function liveHUD(m) {
+  const p = live.st; if (!p) return;
+  $('liveTemps').classList.remove('hide');
+  $('pN').textContent = `${Math.round(p.nozzle_temper ?? 0)}/${Math.round(p.nozzle_target_temper ?? 0)}°`;
+  $('pB').textContent = `${Math.round(p.bed_temper ?? 0)}/${Math.round(p.bed_target_temper ?? 0)}°`;
+  $('pS').textContent = `${p.spd_mag ?? 100}%`;
+  if (!live.follow) return;   // 拖回去看的時候，上方進度維持顯示畫面上的時間
+  // 進度、剩餘時間用印表機自己的數字
+  const pct = (p.mc_percent ?? 0) / 100, rem = (p.mc_remaining_time ?? 0) * 60;
+  $('arc').setAttribute('stroke-dasharray', `${pct * CIRC} ${CIRC}`);
+  $('pct').textContent = (p.mc_percent ?? 0) + '%';
+  if (p.total_layer_num) $('kLayer').innerHTML = `${p.layer_num ?? 0}<small>/${p.total_layer_num}</small>`;
+  $('kRem').textContent = fmtT(rem);
+  $('kEta').textContent = new Date(Date.now() + rem * 1000).toTimeString().slice(0, 5);
+  if (p.gcode_state === 'PAUSE' || p.gcode_state === 'FAILED' || p.gcode_state === 'FINISH' || p.gcode_state === 'IDLE')
+    $('stageNow').innerHTML = `<span style="color:${p.gcode_state === 'FINISH' ? '#5ef2a0' : '#ff5d5d'}">■ ${STATE_ZH[p.gcode_state]}</span>　第 ${m.layer} 層`;
+}
+function idleScreen(s) {
+  const p = s.print || {};
+  $('drop').innerHTML = `<b>PRINT//TRACE</b>${s.connected ? (STATE_ZH[p.gcode_state] || '等待印表機') + '　·　等待列印開始' : '連線印表機中…'}
+    <span style="font-size:12px;color:var(--dim)">噴嘴 ${Math.round(p.nozzle_temper ?? 0)}°C　熱床 ${Math.round(p.bed_temper ?? 0)}°C${p.sdcard === false ? '　·　<span style="color:#ff5d5d">印表機沒有插 SD 卡</span>' : ''}</span>`;
+}
+function setLiveFollow(on) {
+  live.follow = on; $('backLive').classList.toggle('hide', on);
+  if (on && live.st) { lastLayer = -1; setTime(liveTarget()); }
+}
+async function startLive() {
+  live.on = true;
+  $('play').classList.add('hide'); $('ctl').classList.add('hide');
+  const es = new EventSource('/api/events');
+  es.addEventListener('status', e => onLiveStatus(JSON.parse(e.data)));
+  es.addEventListener('file', async e => {
+    const f = JSON.parse(e.data); if (f.url === live.fileUrl) return;
+    live.fileUrl = f.url;
+    try { const buf = await (await fetch(f.url)).arrayBuffer(); await openBuffer(buf, f.name); live.ref = null; live.lastLine = -1; setLiveFollow(true); }
+    catch (err) { console.error('讀不了印表機的檔案', err); }
+  });
+  es.onerror = () => { $('liveBadge').innerHTML = '<span style="color:#ff5d5d">●</span> 後端未連線'; };
+}
+// 使用者自己拖時間軸、量尺或按方向鍵 → 暫停跟隨，出現「回到即時」
+for (const id of ['track', 'lg']) $(id).addEventListener('pointerdown', () => { if (live.on) setLiveFollow(false); }, true);
+addEventListener('keydown', e => { if (live.on && /Arrow/.test(e.code)) setLiveFollow(false); }, true);
+$('backLive').onclick = () => setLiveFollow(true);
 
 // ---------- 載入檔案 ----------
 async function openBuffer(buf, name) {
@@ -1522,6 +1625,8 @@ if (qs.get('file')) fetch(qs.get('file')).then(r => r.arrayBuffer()).then(b => o
   if (qs.get('rot')) { const r = +qs.get('rot') * Math.PI / 180, T = homePose.tgt, v = homePose.pos.clone().sub(T);
     homePose.pos.copy(T).add(v.applyAxisAngle(new THREE.Vector3(0, 0, 1), r)); if (intro) intro.az += r; else { camera.position.copy(homePose.pos); controls.update(); } }
 }).catch(e => console.error(e));
+// 沒指定檔案、而且是由 server.mjs 提供的頁面 → 進入即時模式
+else fetch('/api/status').then(r => r.ok ? r.json() : null).then(s => { if (s) { onLiveStatus(s); startLive(); } }).catch(() => {});
 
 </script>
 </body>

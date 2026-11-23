@@ -1,0 +1,28 @@
+{
+  "name": "print-trace",
+  "version": "1.0.0",
+  "description": "Bambu Lab 列印進度的 3D 看板：讀 `.gcode.3mf`／`.gcode`，用科技感 HUD 顯示噴頭目前在印哪裡。\r 目前是**離線模擬版**（自己用時間軸播放），下一步要接印表機的即時資料。",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wanstagram/print-trace.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Wanstagram/print-trace/issues"
+  },
+  "homepage": "https://github.com/Wanstagram/print-trace#readme",
+  "dependencies": {
+    "basic-ftp": "^6.2.6",
+    "mqtt": "^5.16.1"
+  }
+}

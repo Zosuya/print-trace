@@ -5,7 +5,7 @@
 //   node server.mjs --sim <檔案>         模擬列印（不連印表機，用來測試畫面）
 //
 import http from 'node:http';
-import { readFileSync, existsSync, mkdirSync, statSync, createReadStream, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, statSync, createReadStream, writeFileSync, appendFileSync } from 'node:fs';
 import { join, extname, basename, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
@@ -50,10 +50,26 @@ function applyReport(p) {
 }
 
 // 記下這次列印實際出現過的準備步驟（網頁重新整理也能知道哪些做過、哪些被跳過）
+// 同時把每一步的實際開始時間記下來，開始印第一層時寫進 cache/prep-log.jsonl（之後拿來修正預估）
+let prepRec = null;
 function trackStages() {
   const p = state.print, job = (p.subtask_name || '') + '|' + (p.gcode_file || '');
-  if (job !== state.job) { state.job = job; state.stgHist = []; }
-  const s = p.stg_cur; if (s > 0 && s < 255 && state.stgHist[state.stgHist.length - 1] !== s) state.stgHist.push(s);
+  if (job !== state.job) { state.job = job; state.stgHist = []; prepRec = null; }
+  const s = p.stg_cur, now = Date.now();
+  if (p.gcode_state === 'PREPARE' || p.gcode_state === 'RUNNING') {
+    if (!prepRec && (p.layer_num || 0) === 0) prepRec = { job, file: p.gcode_file, start: now, steps: [] };
+    if (prepRec && !prepRec.done) {
+      const lastStep = prepRec.steps[prepRec.steps.length - 1];
+      if (s > 0 && s < 255 && lastStep?.code !== s) prepRec.steps.push({ code: s, at: now });
+      if ((p.layer_num || 0) > 0) {
+        prepRec.done = true; prepRec.printStart = now;
+        prepRec.steps.forEach((st, i) => { st.sec = Math.round(((prepRec.steps[i + 1]?.at ?? now) - st.at) / 100) / 10; });
+        try { appendFileSync(join(CACHE, 'prep-log.jsonl'), JSON.stringify({ ...prepRec, totalSec: Math.round((now - prepRec.start) / 1000) }) + '\n'); } catch { }
+        console.log('[prep] 準備階段共', Math.round((now - prepRec.start) / 1000), '秒：', prepRec.steps.map(x => `${x.code}:${x.sec}s`).join(' '));
+      }
+    }
+  }
+  if (s > 0 && s < 255 && state.stgHist[state.stgHist.length - 1] !== s) state.stgHist.push(s);
 }
 
 // ---------- 下載正在印的檔案 ----------

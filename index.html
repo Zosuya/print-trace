@@ -1237,43 +1237,6 @@ function updateCallout() {
 
 function applyToggles() { travel.visible = $('showTravel').checked; ghost.visible = $('showGhost').checked; }
 
-// ---------- 熱床外形：用 OrcaSlicer 的熱床模型（bed/），沒有對應的機型就只畫可列印範圍 ----------
-const BED_MODELS = [[/Bambu Lab (A1|X1|P1)(?! mini)/i, { stl: 'bed/bbl-3dp-X1.stl', svg: 'bed/bbl-3dp-logo.svg' }]];
-let plate;
-function parseSTL(buf) {
-  const dv = new DataView(buf), n = dv.getUint32(80, true), pos = new Float32Array(n * 9);
-  for (let i = 0; i < n; i++) for (let k = 0; k < 9; k++) pos[i * 9 + k] = dv.getFloat32(84 + i * 50 + 12 + k * 4, true);
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
-}
-async function buildPlate() {
-  if (plate) { scene.remove(plate); plate = null; }
-  const model = data.meta.config.printer_model || '';
-  const hit = BED_MODELS.find(([r]) => r.test(model));
-  if (!hit) return;
-  try {
-    const g = parseSTL(await (await fetch(hit[1].stl)).arrayBuffer());
-    g.computeBoundingBox(); const bb = g.boundingBox;
-    plate = new THREE.Group();
-    const body = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#0b1822', transparent: true, opacity: 0.85, depthWrite: false }));
-    body.renderOrder = -12;
-    // 只留外輪廓（板子邊緣）
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), new THREE.LineBasicMaterial({ color: '#4de2ff', transparent: true, opacity: 0.35 }));
-    edges.renderOrder = -9;
-    plate.add(body, edges);
-    // 板面圖案（logo、刻度）：讀 SVG 當成透明度貼圖，染成青色
-    const img = new Image(); img.src = hit[1].svg;
-    await img.decode();
-    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = Math.round(1024 * img.height / img.width);
-    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, cv.width, cv.height);
-    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    const w = bb.max.x - bb.min.x, h = bb.max.y - bb.min.y;
-    const deco = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, color: '#4de2ff', transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }));
-    deco.position.set((bb.min.x + bb.max.x) / 2, (bb.min.y + bb.max.y) / 2, 0.01); deco.renderOrder = -8;
-    plate.add(deco);
-    scene.add(plate);
-  } catch (e) { console.warn('熱床模型載入失敗', e); }
-}
-
 // ---------- 準備區域：從起始程序的段落算出清潔、擠料、調平等工作區 ----------
 const ZONE_ZH = [
   [/bed leveling/i, '自動調平'], [/brush/i, '刷頭清潔'], [/remove waste|touching/i, '碰觸除料'], [/wipe nozzle/i, '鋼片擦拭'],

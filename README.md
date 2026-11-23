@@ -1,59 +1,143 @@
 # PRINT//TRACE
 
-Bambu Lab 列印進度的 3D 看板：讀 `.gcode.3mf`／`.gcode`，用科技感 HUD 顯示噴頭目前在印哪裡。
-目前是**離線模擬版**（自己用時間軸播放），下一步要接印表機的即時資料。
+**Bambu Lab 列印進度的 3D 即時看板**——讀印表機正在印的 G-code，用科技感的 HUD 把「噴頭現在印到哪」畫出來，可以直接嵌進 OrcaSlicer／Bambu Studio 的「裝置」頁。
+
+*A live 3D HUD for Bambu Lab printers: it reads the G-code being printed and shows where the nozzle is, right inside OrcaSlicer / Bambu Studio. [English below](#english).*
+
+![開場動畫](docs/intro.gif)
+
+> ⚠️ 這是個人的非官方專案，與 Bambu Lab 無關。只讀取印表機狀態，不會送任何控制指令。
+
+## 看起來長這樣
+
+| 嵌在 OrcaSlicer 裡 | 列印完成 |
+|---|---|
+| ![Orca 裡的畫面](docs/orca.gif) | ![列印完成](docs/complete.png) |
+
+![列印中](docs/live.png)
+
+## 功能
+
+- **跟著實機跑**：印表機透過區網 MQTT 回報層數、步驟、溫度，後端自動用 FTPS 從 SD 卡下載正在印的檔案，畫面照 G-code 把每一層一條一條畫出來
+- **層內位置推算＋自動校正**：A1 不回報正在跑第幾行，所以換層時對齊、層內照 G-code 估時往前推；每次換層比較預估與實際，自動調整推算速度。畫面一直往前跑、不停不跳，落後的量平均攤到下一層補回來
+- **準備階段**：照印表機回報的步驟顯示做到哪一步（會跳過的步驟標「略過」），3D 等開始印第一層才跟著跑
+- **讀懂 Bambu 的條件區塊**：縮時攝影、擠出校準、調平這些 `M1002 judge_flag` ＋ `M622/M623` 包起來的段落，照印表機設定決定算不算進去
+- **畫面**：線框／全息／實體／點雲四種顯示，線條類型或模型顏色（多色自動用模型顏色）；開場動畫、噴頭跟隨模式（F 鍵）、列印完成畫面
+- **跟著切片軟體開關**：背景待命，OrcaSlicer／Bambu Studio 開著才連印表機，關掉就停
+
+## 需要什麼
+
+- Bambu Lab 印表機（實測：**A1**；P1、X1、A1 mini 應該可用但未測）
+- 印表機和電腦在同一個區網，印表機插著 SD 卡
+- [Node.js](https://nodejs.org/) 18 以上
+- 印表機的 **IP**、**序號**、**LAN 存取碼**（印表機螢幕「設定 → 網路」或 LAN 模式頁面可以看到）
+- 新韌體如果連不上，試著打開「LAN 模式」或「開發者模式」
+
+## 安裝
+
+```sh
+git clone https://github.com/Wanstagram/print-trace.git
+cd print-trace
+npm install
+```
+
+在專案資料夾建立 `config.local.json`（已經在 `.gitignore`，不會被提交）：
+
+```json
+{
+  "ip": "192.168.1.50",
+  "serial": "你的印表機序號",
+  "accessCode": "LAN 存取碼",
+  "port": 8765
+}
+```
+
+> 已經用 OrcaSlicer 連過這台印表機的話，`%APPDATA%\OrcaSlicer\OrcaSlicer.conf` 的 `local_machines` 裡就有這三個值。
 
 ## 執行
 
-純前端、單一檔案，不需要建置。three.js 和熱床模型都放在 repo 裡，不需要網路。
-
 ```sh
-python3 -m http.server 8765
-# 開 http://localhost:8765/ ，把 .gcode.3mf 拖進去
+node server.mjs                  # 直接啟動，打開 http://localhost:8765/
+node server.mjs --with-slicer    # 背景待命：切片軟體開著才啟動，關掉就停
 ```
 
-網址參數（測試用）：`?file=xxx.gcode.3mf&at=秒數&render=wire|holo|solid|cloud&color=feature|filament&rot=度&zoom=倍數`
-
-## 跟著切片軟體自動開關（Windows）
+**Windows 開機自動待命**（隱藏執行、不會有黑色視窗）：
 
 ```powershell
-pwsh tools/autostart.ps1 install    # 登入後在背景待命，OrcaSlicer／Bambu Studio 開著才連印表機，關掉就停
+pwsh tools/autostart.ps1 install     # 安裝並立刻在背景啟動
 pwsh tools/autostart.ps1 status
 pwsh tools/autostart.ps1 uninstall
 ```
 
-也可以手動：`node server.mjs --with-slicer`。紀錄在 `cache/server.log`。
+紀錄寫在 `cache/server.log`。
 
-嵌進 Orca：裝置頁攝影機設定的自訂網址填 `http://localhost:8765/`。
+### 嵌進 OrcaSlicer／Bambu Studio
 
-## 目前功能
+「裝置」頁 → 攝影機區右上角的設定 → 自訂攝影機來源，網址填：
 
-- G-code 解析：G0/G1/G2/G3、相對／絕對座標、M83、FEATURE／LAYER 註解、M204 加速度、M73 進度、換料（T/M620/M621）、溫度（M104/M109/M140/M190）
-- 時間估算：梯形加減速＋轉角速度，再用切片軟體的 `M73 P` 進度點校正到總時間
-- 準備階段：讀 `M1002 gcode_claim_action`（跟 MQTT `stg_cur` 同一套代碼）做步驟清單與倒數；讀起始程序的 `;===== xxx =====` 段落算出清潔、擠料、調平（`G29 A X Y I J`）等工作區並畫在板子上
-- 顯示方式：線框（預設推薦）、全息、實體、點雲；上色：線條類型／模型顏色（多色自動用模型顏色）
-- 開場動畫：鏡頭轉入 → 點雲由下往上 → 外牆輪廓擠出的近似外殼由下往上填
-- 噴頭跟隨模式（F 鍵）；準備階段自動跟隨（拉遠、有不動範圍）
-- 熱床外形：`bed/` 來自 OrcaSlicer（A1/X1/P1 共用 `bbl-3dp-X1.stl`、`bbl-3dp-logo.svg`）
-- 光暈 bloom 固定 0.3、線框線寬固定 2px
+```
+http://localhost:8765/
+```
 
-## 下一步：接 A1 即時資料
+之後改版時，頁面會自己重新整理。
 
-- MQTT：`mqtts://<IP>:8883`，帳號 `bblp`、密碼＝LAN access code，訂閱 `device/<序號>/report`
-  - 用到的欄位：`layer_num`、`total_layer_num`、`mc_percent`、`mc_remaining_time`、`stg_cur`、`gcode_state`、`spd_lvl`、`spd_mag`、`nozzle_temper`／`bed_temper`、`subtask_name`／`gcode_file`
-- FTPS：`ftps://<IP>:990`（implicit TLS，`bblp`／access code）下載正在印的 `.gcode.3mf`
-- 新韌體可能要開 LAN 模式／開發者模式第三方才連得上
-- 瀏覽器不能直接連 MQTT over TLS／FTPS → 需要一個小的後端（Node 或 Python）轉成 WebSocket/SSE 給前端
-- 層內位置用推算：收到換層就對齊該層開始時間，依 G-code 時間往前推，推完停在層尾等下一層；乘 `spd_mag`；用剩餘時間微調
-- 時間軸改成只顯示（可拖回看已印部分，旁邊「回到即時」）
+### 用手機、平板看
+
+`config.local.json` 加上 `"host": "0.0.0.0"`，再用 `http://<電腦的 IP>:8765/` 開。預設只聽本機。
+
+### 沒有印表機也能玩
+
+- 把任何切好片的 `.gcode.3mf`／`.gcode` 拖進網頁，可以播放、拖時間軸（離線模式）
+- 模擬列印：`node server.mjs --sim 檔案.gcode.3mf 100`（每秒跑 100 行，假裝是印表機在回報）
+
+## 操作
+
+| | |
+|---|---|
+| F | 噴頭跟隨模式 |
+| ↑ ↓ | 換層（即時模式會暫停跟隨，按「回到即時」回來） |
+| ← → | 前後 5 秒（Shift：1 分鐘，離線模式） |
+| 空白鍵 | 播放／暫停（離線模式） |
+| 顯示設定 | 顯示方式、上色方式、空跑路徑等 |
+
+## 怎麼運作
+
+```
+印表機 ──MQTT(8883, TLS)──▶ server.mjs ──SSE──▶ 網頁（three.js）
+       ──FTPS(990)────────▶  下載正在印的 .gcode.3mf
+```
+
+- 印表機本身就是 MQTT 伺服器，帳號 `bblp`、密碼是 LAN 存取碼，訂閱 `device/<序號>/report`
+- 用到的欄位：`gcode_state`、`stg_cur`、`layer_num`、`mc_percent`、`mc_remaining_time`、`spd_mag`、溫度、`ipcam.timelapse`
+- 準備階段每一步的實際時間會記在 `cache/prep-log.jsonl`，下次用來判斷會不會調平、擠出校準
 
 ## 已知限制
 
-- 自動調平的時間被切片軟體算在「清潔噴嘴」裡，離線時拆不開（接實機改用 `stg_cur`）
-- 外殼用外牆中心線擠出，比實際小約半個線寬
-- 多色只用人工雙色檔驗證過，還沒用真的 AMS 檔案測
+- A1 的 `mc_print_line_number` 一直是 0，層內位置只能推算（實測在 `M73 L` 插標記也沒用，層數是韌體自己算的）
+- 雙噴頭（H2D）的切換還沒處理
+- 一次只接一台印表機
+- 實體外殼用外牆中心線擠出，比實際模型小約半個線寬
 
-## 第三方
+## 工具
 
-- three.js r170（MIT）：`lib/`
-- OrcaSlicer 熱床模型與貼圖（AGPL-3.0）：`bed/`
+- `tools/probe.mjs`：MQTT 連線測試，印出狀態欄位
+- `tools/record.mjs`：錄下列印過程中每筆回報的變化
+- `tools/prep-compare.mjs`：比對準備階段的預估與實際時間
+- `tools/check-page.mjs`：檢查網頁主程式語法
+
+## 授權
+
+MIT。使用的第三方程式：[three.js](https://threejs.org/)（MIT），放在 `lib/`。
+
+---
+
+## English
+
+**PRINT//TRACE** is an unofficial live 3D dashboard for Bambu Lab printers. A small Node.js server listens to the printer's local MQTT broker (`mqtts://<ip>:8883`, user `bblp`, password = LAN access code), downloads the job's `.gcode.3mf` over FTPS, and streams status to a three.js page via SSE. The page replays the G-code toolpath in sync with the printer:
+
+- layer changes from the printer anchor the playback; inside a layer the position is estimated from G-code timing and auto-calibrated against real layer durations, so the animation never stalls or jumps
+- prep stages follow the printer's `stg_cur`; conditional blocks (`M1002 judge_flag` + `M622/M623`, e.g. timelapse) are evaluated like the firmware does
+- wireframe / hologram / solid / point-cloud renderers, intro animation, nozzle-follow camera, print-complete screen
+- `--with-slicer` mode starts/stops together with OrcaSlicer / Bambu Studio; embed it via the Device tab's custom camera URL `http://localhost:8765/`
+
+Setup: `npm install`, create `config.local.json` with `ip`, `serial`, `accessCode`, then `node server.mjs`. Tested on an A1; other Bambu models should work but are untested. Read-only — no commands are sent to the printer. Not affiliated with Bambu Lab. MIT licensed.

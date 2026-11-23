@@ -150,6 +150,25 @@
   #drop b { color:var(--cy); font-size:20px; letter-spacing:.3em; }
   #drop.hl { background:rgba(77,226,255,.05); outline:1px dashed var(--cy); outline-offset:-20px; }
   .hide { display:none !important; }
+  /* 列印完成 */
+  #done { left:50%; bottom:28px; transform:translate(-50%, 30px); opacity:0; pointer-events:none; min-width:520px; padding:18px 26px 20px;
+    transition:opacity .8s ease, transform .8s cubic-bezier(.2,.8,.2,1); border-color:rgba(94,242,160,.35); }
+  #done::before, #done::after { border-color:var(--ok); }
+  body.done #done { opacity:1; transform:translate(-50%, 0); pointer-events:auto; }
+  body.done #tele, body.done #term, body.done #side, body.done #callout { opacity:0 !important; pointer-events:none; transition:opacity .6s; }
+  body.done:not(.live) #done { bottom:100px; }
+  body.done #arc { stroke:var(--ok); filter:drop-shadow(0 0 5px var(--ok)) !important; }
+  #done .ttl { display:flex; align-items:center; gap:12px; }
+  #done .ttl .ck { width:34px; height:34px; border:1.5px solid var(--ok); display:flex; align-items:center; justify-content:center; color:var(--ok); font-size:18px; box-shadow:0 0 14px rgba(94,242,160,.35); }
+  #done .ttl b { font:600 22px/1.1 -apple-system,"PingFang TC",sans-serif; color:var(--fg); }
+  #done .ttl span { display:block; font:600 11px/1 var(--mono); letter-spacing:.3em; color:var(--ok); margin-top:5px; }
+  #done .nm { font-size:15px; color:#b6cfdb; margin:12px 0 14px; }
+  #done .st { display:grid; grid-template-columns:repeat(4, auto); gap:6px 28px; }
+  #done .st .v { font:300 24px/1.15 var(--mono); color:var(--fg); }
+  #done .st .v small { font-size:13px; color:var(--dim); margin-left:2px; }
+  #done .fl { display:flex; gap:14px; margin-top:12px; font:12px var(--mono); color:var(--dim); }
+  #done .fl i { display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; border:1px solid rgba(255,255,255,.3); }
+  @media (max-width: 700px) { #done { min-width:0; left:16px; right:16px; transform:translateY(30px); } body.done #done { transform:none; } #done .st { grid-template-columns:repeat(2, auto); } }
   /* 即時模式不需要底部時間軸，下方面板往下貼齊 */
   body.live #dock, body.live #lg { display:none !important; }
   body.live #tele, body.live #term { bottom:16px; }
@@ -275,6 +294,8 @@
       <div id="ctl"></div>
       <div id="track"><div id="segs"></div><div id="ticks"></div><div id="fill"></div><div id="head"></div></div>
     </div>
+
+    <div id="done" class="pane"></div>
 
     <div id="settings" class="pane">
       <div class="hd"><span class="tag">顯示設定</span><span class="ln"></span></div>
@@ -728,6 +749,7 @@ function setInst(k, frac) {
 }
 
 function load(d, name) {
+  if (typeof doneFx !== 'undefined' && doneFx.on) exitDone();
   data = d;
   estimateTimes(data);
   buildSegments(data);
@@ -1078,7 +1100,7 @@ function updateHUD(m) {
   if (!maxF || maxF === 1) { for (const x of data.moves) if (x.layer > 0) { maxF = Math.max(maxF, x.f / 60); maxA = Math.max(maxA, x.acc); } }
   const p = t / data.total;
   $('arc').setAttribute('stroke-dasharray', `${p * CIRC} ${CIRC}`);
-  $('pct').textContent = (p * 100).toFixed(1) + '%';
+  $('pct').textContent = p >= 0.9995 ? '100%' : (p * 100).toFixed(1) + '%';
   $('kLayer').innerHTML = `${m.layer}<small>/${L}</small>`;
   $('kEl').textContent = fmtT(t);
   $('kRem').textContent = fmtRem(data.total - t);
@@ -1428,6 +1450,53 @@ function stepIntro(now) {
   $('introTxt').innerHTML = `${e < 2.4 ? 'SCANNING GEOMETRY' : 'MATERIALIZING'}<b>${$('fname').textContent}</b>LAYER ${String(front).padStart(3, '0')} / ${I.L}<div class="sk">點一下或按任意鍵跳過</div>`;
   if (e >= DUR) endIntro();
 }
+// ---------- 列印完成：實體外殼由下往上浮現 → 鏡頭慢慢環繞，下方顯示完成卡片 ----------
+const doneFx = { on: false, t0: 0 };
+const fmtDur = s => { s = Math.round(s / 60); const h = Math.floor(s / 60); return h ? `${h}<small>h</small> ${s % 60}<small>m</small>` : `${s}<small>m</small>`; };
+function enterDone(info = {}) {
+  if (doneFx.on || !data || intro) return;
+  doneFx.on = true; doneFx.t0 = performance.now();
+  document.body.classList.add('done');
+  if (t < data.total) setTime(data.total);
+  if (follow) { follow = null; $('followBtn').classList.remove('on'); }
+  // 鏡頭先回全景，再開始慢慢轉
+  if (homePose) flyBack = { t0: performance.now(), p0: camera.position.clone(), q0: controls.target.clone(), p1: homePose.pos.clone(), q1: homePose.tgt.clone() };
+  nozzle.visible = false;
+  shell.visible = true; shell.geometry.setDrawRange(0, 0);
+  // 卡片內容
+  const jt = info.jobTime, real = jt?.start && jt?.end ? (jt.end - jt.start) / 1000 : null;
+  const endAt = new Date(jt?.end || Date.now());
+  const L = data.layers.length - 1, fu = data.filUse || [];
+  const g = fu.reduce((a, f) => a + f.g, 0), m = fu.reduce((a, f) => a + f.m, 0);
+  $('done').innerHTML = `
+    <div class="ttl"><div class="ck">✓</div><div><b>列印完成</b><span>PRINT COMPLETE</span></div></div>
+    <div class="nm">${$('fname').textContent}</div>
+    <div class="st">
+      <div><div class="tag">實際耗時 TIME</div><div class="v">${real ? fmtDur(real) : fmtDur(data.total)}</div></div>
+      <div><div class="tag">完成於 FINISHED</div><div class="v">${endAt.toTimeString().slice(0, 5)}</div></div>
+      <div><div class="tag">層數 LAYERS</div><div class="v">${L}</div></div>
+      <div><div class="tag">線材 FILAMENT</div><div class="v">${g ? g.toFixed(1) + '<small>g</small>' : '—'}</div></div>
+    </div>
+    ${fu.length ? `<div class="fl">${fu.map(f => `<span><i style="background:${f.color || '#ccc'}"></i>${f.type || ''} ${f.g.toFixed(1)}g · ${f.m.toFixed(2)}m</span>`).join('')}</div>` : ''}`;
+}
+function exitDone() {
+  if (!doneFx.on) return;
+  doneFx.on = false; document.body.classList.remove('done'); controls._userDrag = false;
+  controls.autoRotate = false; shell.visible = false; nozzle.visible = true;
+  applyRender();
+}
+function stepDone(now) {
+  if (!doneFx.on) return;
+  const e = (now - doneFx.t0) / 1000, L = data.layers.length - 1;
+  // 0.8 秒後外殼由下往上浮現（2.4 秒），線框同時淡掉一些
+  const k = ease(clamp01((e - 0.8) / 2.4));
+  shell.geometry.setDrawRange(0, shellLayerEnd[Math.min(L + 1, Math.round(k * L) + 1)] || 0);
+  if (wire) wire.material.opacity = Math.min(wire.material.opacity, 0.5 * (1 - k * 0.7));
+  // 鏡頭飛回全景後開始慢慢轉（使用者拖曳就停）
+  if (e > 1.2 && !flyBack && !controls._userDrag) { controls.autoRotate = true; controls.autoRotateSpeed = 0.6; }
+}
+renderer.domElement.addEventListener('pointerdown', () => { if (doneFx.on) { controls._userDrag = true; controls.autoRotate = false; } });
+
 function endIntro() {
   if (!intro) return;
   const I = intro; intro = null;
@@ -1501,7 +1570,7 @@ addEventListener('keydown', e => { if (e.code === 'KeyF' && data && !intro) user
 // ---------- 控制 ----------
 $('replayBtn').onclick = () => { if (!intro) { if (follow) { follow = null; $('followBtn').classList.remove('on'); } flyBack = null; startIntro(); } };
 $('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '❚❚' : '▶'; if (playing && t >= data.total) setTime(0); };
-function scrub(e) { const r = $('track').getBoundingClientRect(); setTime(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * data.total); }
+function scrub(e) { exitDone(); const r = $('track').getBoundingClientRect(); setTime(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * data.total); }
 $('track').addEventListener('pointerdown', e => { $('track').setPointerCapture(e.pointerId); scrub(e); });
 $('track').addEventListener('pointermove', e => { if (e.buttons) scrub(e); });
 function scrubLayer(e) { const r = $('lg').getBoundingClientRect(); const L = data.layers.length - 1;
@@ -1538,12 +1607,13 @@ function loop(now) {
   const dt = (now - last) / 1000; last = now;
   if (intro) stepIntro(now);
   else if (live.on) stepLive(dt);
-  else if (data && playing) { setTime(t + dt * rate); if (t >= data.total) $('play').click(); }
+  else if (data && playing) { setTime(t + dt * rate); if (t >= data.total) { $('play').click(); enterDone(); } }
   if (nozzle) { const ud = nozzle.userData, k = (now / 900) % 1;
     ud.ring.material.opacity = 0.4 + 0.35 * Math.sin(now / 180);
     ud.ring2.scale.setScalar(1 + k * 0.8); ud.ring2.material.opacity = 0.35 * (1 - k); }
   if (!intro) { stepCamera(now, dt); controls.update(); }
   updateWireFade();
+  stepDone(now);
   if (bloom.strength > 0) composer.render(); else renderer.render(scene, camera);
   if (!intro) updateCallout(); else updateAnnos();
   updateZones(now);
@@ -1580,7 +1650,8 @@ function lineToMove(line) {   // 找「行號 ≤ line」的最後一個移動
 }
 function onLiveStatus(s) {
   if (s.ver) { if (live.ver && s.ver !== live.ver) return location.reload(); live.ver = s.ver; }
-  live.st = s.print || {};
+  live.st = s.print || {}; live.info = s;
+  if (doneFx.on && live.st.gcode_state && live.st.gcode_state !== 'FINISH') exitDone();
   // 印表機回報縮時攝影有沒有開，決定 G-code 裡的縮時區塊要不要算進去
   const tl = s.print?.ipcam?.timelapse; if (tl) gcodeFlags.timelapse_record_flag = tl === 'enable' ? 1 : 0;
   // 調平、擠出校準做不做是印表機自己判斷的，照上一次實際有沒有做來猜
@@ -1642,7 +1713,7 @@ let playV = 1;            // 目前播放速度（G-code 秒／實際秒）
 function stepLive(dt) {
   if (!live.on || !live.st || !data || intro || !live.follow) return;
   const p = live.st, L = p.layer_num || 0, spd = (p.spd_mag || 100) / 100;
-  if (p.gcode_state === 'FINISH') { if (t < data.total) setTime(Math.min(data.total, t + dt * 6)); return; }
+  if (p.gcode_state === 'FINISH') { if (t < data.total - 0.01) setTime(Math.min(data.total, t + dt * 6)); else enterDone(live.info); return; }
   if (L > 0 && layerStart[L] !== undefined && p.gcode_state !== 'IDLE') {
     const paused = p.gcode_state === 'PAUSE';
     const base = spd * live.rate;
@@ -1723,7 +1794,7 @@ $('backLive').onclick = () => setLiveFollow(true);
 
 // ---------- 載入檔案 ----------
 async function openBuffer(buf, name) {
-  let text, thumb, objName;
+  let text, thumb, objName, filUse = [];
   if (/\.3mf$/i.test(name)) {
     const files = await readZip(buf);
     const g = Object.keys(files).find(n => /plate_\d+\.gcode$/.test(n)) || Object.keys(files).find(n => n.endsWith('.gcode'));
@@ -1732,10 +1803,12 @@ async function openBuffer(buf, name) {
     const png = g.replace('.gcode', '.png');
     if (files[png]) thumb = URL.createObjectURL(new Blob([await files[png]()], { type: 'image/png' }));
     if (files['Metadata/slice_info.config']) { const x = new TextDecoder().decode(await files['Metadata/slice_info.config']());
-      objName = (x.match(/<object [^>]*name="([^"]+)"/) || [])[1]; }
+      objName = (x.match(/<object [^>]*name="([^"]+)"/) || [])[1];
+      // 線材用量（完成畫面用）
+      filUse = [...x.matchAll(/<filament [^>]*>/g)].map(m => ({ g: +(m[0].match(/used_g="([\d.]+)"/) || [])[1] || 0, m: +(m[0].match(/used_m="([\d.]+)"/) || [])[1] || 0, color: (m[0].match(/color="(#[0-9A-Fa-f]{6})/) || [])[1], type: (m[0].match(/type="([^"]+)"/) || [])[1] })); }
   } else text = new TextDecoder().decode(buf);
   $('thumb').style.display = thumb ? '' : 'none'; if (thumb) $('thumb').src = thumb;
-  const d = parseGcode(text, gcodeFlags); d.objName = objName;
+  const d = parseGcode(text, gcodeFlags); d.objName = objName; d.filUse = filUse;
   maxF = 1; maxA = 1;
   load(d, name.split('/').pop());
 }

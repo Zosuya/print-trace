@@ -40,7 +40,7 @@ function snapshot() {
   const p = {}; for (const k of KEYS) if (k in state.print) p[k] = state.print[k];
   // ver：index.html 改過就會變，網頁看到不同就自動重新整理（嵌在 Orca 裡沒辦法手動重整）
   let ver = 0; try { ver = statSync(join(ROOT, 'index.html')).mtimeMs; } catch { }
-  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated, ver, stgHist: state.stgHist, lastPrep };
+  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated, ver, stgHist: state.stgHist, lastPrep, jobTime: state.jobTime };
 }
 function applyReport(p) {
   Object.assign(state.print, p);
@@ -57,7 +57,10 @@ let prepRec = null;
 let lastPrep = []; try { const l = readFileSync(join(CACHE, 'prep-log.jsonl'), 'utf8').trim().split('\n').pop(); lastPrep = JSON.parse(l).steps.map(x => x.code); } catch { }
 function trackStages() {
   const p = state.print, job = (p.subtask_name || '') + '|' + (p.gcode_file || '');
-  if (job !== state.job) { state.job = job; state.stgHist = []; prepRec = null; }
+  if (job !== state.job) { state.job = job; state.stgHist = []; prepRec = null; state.jobTime = null; }
+  // 實際開始／結束時間（完成畫面用）
+  if ((p.gcode_state === 'PREPARE' || p.gcode_state === 'RUNNING') && !state.jobTime) state.jobTime = { start: Date.now() };
+  if ((p.gcode_state === 'FINISH' || p.gcode_state === 'FAILED') && state.jobTime && !state.jobTime.end) state.jobTime.end = Date.now();
   const s = p.stg_cur, now = Date.now();
   if (p.gcode_state === 'PREPARE' || p.gcode_state === 'RUNNING') {
     if (!prepRec && (p.layer_num || 0) === 0) prepRec = { job, file: p.gcode_file, start: now, steps: [] };

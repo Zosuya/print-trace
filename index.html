@@ -340,8 +340,14 @@ async function readZip(buf) {
 
 // ---------- 解析 G-code ----------
 // 每一段移動：起點、終點、是否擠出、特徵、線寬、層高、F、加速度、時間
-function parseGcode(text) {
+// Bambu 的條件區塊：M1002 judge_flag <旗標> 後面接 M622 J<值>（或 S<值>），旗標等於該值才會執行到 M623。
+// 縮時攝影（每層跑去床外拍照）、擠出校準、調平都是這樣包起來的，印表機沒開就整段跳過。
+const DEFAULT_FLAGS = { timelapse_record_flag: 0, extrude_cali_flag: 1, g29_before_print_flag: 1, build_plate_detect_flag: 1,
+  g39_3rd_layer_detect_flag: 0, g39_detection_flag: 0, g39_mass_exceed_flag: 0 };
+let gcodeFlags = { ...DEFAULT_FLAGS };
+function parseGcode(text, flags = gcodeFlags) {
   const lines = text.split('\n');
+  let judged = null; const skipStack = [];   // 目前判斷的旗標、巢狀條件區塊是否要跳過
   const moves = [];
   const meta = { header: {}, config: {} };
   const anchors = [];                 // [移動索引, 切片軟體的進度 %]
@@ -394,6 +400,11 @@ function parseGcode(text) {
     const s = raw.split(';')[0].trim();
     if (!s) continue;
     const cmd = s.split(/\s+/)[0].toUpperCase();
+    if (cmd === 'M1002' && /judge_flag/.test(s)) { judged = (s.match(/judge_flag\s+(\w+)/) || [])[1]; continue; }
+    if (cmd === 'M622') { const v = num(s, 'J') ?? num(s, 'S'); const fv = judged ? (flags[judged] ?? 1) : 1;
+      skipStack.push(skipStack.some(Boolean) || (v !== undefined && fv !== v)); continue; }
+    if (cmd === 'M623') { skipStack.pop(); continue; }
+    if (skipStack.some(Boolean)) continue;
 
     if (cmd === 'G0' || cmd === 'G1') {
       const X = num(s, 'X'), Y = num(s, 'Y'), Z = num(s, 'Z'), E = num(s, 'E'), F = num(s, 'F');
@@ -1547,6 +1558,8 @@ function lineToMove(line) {   // 找「行號 ≤ line」的最後一個移動
 function onLiveStatus(s) {
   if (s.ver) { if (live.ver && s.ver !== live.ver) return location.reload(); live.ver = s.ver; }
   live.st = s.print || {};
+  // 印表機回報縮時攝影有沒有開，決定 G-code 裡的縮時區塊要不要算進去
+  const tl = s.print?.ipcam?.timelapse; if (tl) gcodeFlags.timelapse_record_flag = tl === 'enable' ? 1 : 0;
   const p = live.st, now = performance.now();
   const ln = +p.mc_print_line_number || 0;
   if (data && ln > 0 && ln !== live.lastLine) { live.lastLine = ln; const m = data.moves[lineToMove(ln - 1)]; live.ref = { t: m.t0, at: now }; }
@@ -1652,7 +1665,7 @@ async function openBuffer(buf, name) {
       objName = (x.match(/<object [^>]*name="([^"]+)"/) || [])[1]; }
   } else text = new TextDecoder().decode(buf);
   $('thumb').style.display = thumb ? '' : 'none'; if (thumb) $('thumb').src = thumb;
-  const d = parseGcode(text); d.objName = objName;
+  const d = parseGcode(text, gcodeFlags); d.objName = objName;
   maxF = 1; maxA = 1;
   load(d, name.split('/').pop());
 }

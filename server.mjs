@@ -34,7 +34,7 @@ function pushStatus() {
 }
 const KEYS = ['gcode_state', 'stg_cur', 'mc_print_stage', 'layer_num', 'total_layer_num', 'mc_percent', 'mc_remaining_time',
   'gcode_file', 'subtask_name', 'spd_lvl', 'spd_mag', 'nozzle_temper', 'nozzle_target_temper', 'bed_temper', 'bed_target_temper',
-  'print_type', 'mc_print_line_number', 'sdcard', 'print_error', 'wifi_signal', 'cooling_fan_speed', 'heatbreak_fan_speed'];
+  'print_type', 'ipcam', 'mc_print_line_number', 'sdcard', 'print_error', 'wifi_signal', 'cooling_fan_speed', 'heatbreak_fan_speed'];
 function snapshot() {
   const p = {}; for (const k of KEYS) if (k in state.print) p[k] = state.print[k];
   // ver：index.html 改過就會變，網頁看到不同就自動重新整理（嵌在 Orca 裡沒辦法手動重整）

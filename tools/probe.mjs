@@ -14,7 +14,7 @@ c.on('connect', () => {
 c.on('message', (t, buf) => {
   const j = JSON.parse(buf.toString()); const p = j.print || {};
   if (p.command !== 'push_status') return;
-  const keys = ['gcode_state', 'stg_cur', 'mc_print_stage', 'layer_num', 'total_layer_num', 'mc_percent', 'mc_remaining_time', 'gcode_file', 'subtask_name', 'spd_lvl', 'spd_mag', 'nozzle_temper', 'nozzle_target_temper', 'bed_temper', 'bed_target_temper', 'print_type', 'mc_print_line_number', 'sdcard', 'hw_switch_state'];
+  const keys = ['gcode_state', 'stg_cur', 'mc_print_stage', 'layer_num', 'total_layer_num', 'mc_percent', 'mc_remaining_time', 'gcode_file', 'subtask_name', 'spd_lvl', 'spd_mag', 'nozzle_temper', 'nozzle_target_temper', 'bed_temper', 'bed_target_temper', 'print_type', 'mc_print_line_number', 'sdcard', 'hw_switch_state', 'ipcam'];
   const o = {}; for (const k of keys) if (k in p) o[k] = p[k];
   console.log(JSON.stringify(o, null, 1)); console.log('all keys:', Object.keys(p).join(','));
   done('');

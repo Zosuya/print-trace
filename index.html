@@ -22,7 +22,7 @@
       repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px),
       radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%); }
   .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
-  .tag { font:600 9.5px/1 var(--mono); letter-spacing:.16em; color:var(--dim); text-transform:uppercase; }
+  .tag { font:600 11px/1 var(--mono); letter-spacing:.16em; color:var(--dim); text-transform:uppercase; }
 
   /* HUD 面板：半透明 + 四角括號 */
   .pane { position:absolute; padding:12px 14px; background:linear-gradient(180deg, rgba(10,20,28,.62), rgba(6,12,18,.5));
@@ -37,46 +37,47 @@
   /* 左上：檔案資訊 */
   #brand { top:16px; left:16px; display:flex; gap:12px; align-items:center; padding:10px 14px 10px 10px; }
   #thumb { width:54px; height:54px; object-fit:contain; background:rgba(77,226,255,.05); border:1px solid var(--cy3); }
-  #brand .t1 { font:700 13px/1 var(--mono); letter-spacing:.18em; color:var(--cy); }
+  #brand .t1 { font:700 14px/1 var(--mono); letter-spacing:.18em; color:var(--cy); }
   #brand .t1 i { font-style:normal; color:var(--dim); }
-  #brand .t2 { font-size:15px; font-weight:600; margin:5px 0 4px; }
-  #brand .t3 { color:var(--dim); font:11px/1.3 var(--mono); }
+  #brand .t2 { font-size:18px; font-weight:600; margin:5px 0 4px; }
+  #brand .t3 { color:var(--dim); font:12.5px/1.35 var(--mono); }
 
   /* 右上：進度環 */
   #prog { top:16px; right:16px; display:flex; gap:14px; align-items:center; padding:12px 16px; }
   #ring { width:92px; height:92px; position:relative; }
   #ring svg { transform:rotate(-90deg); }
   #ring .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  #ring .pct b { font:600 21px/1 var(--mono); color:var(--fg); }
-  #ring .pct span { font:9px/1 var(--mono); color:var(--dim); letter-spacing:.14em; margin-top:4px; }
+  #ring .pct b { font:600 22px/1 var(--mono); color:var(--fg); }
+  #ring .pct span { font:10px/1 var(--mono); color:var(--dim); letter-spacing:.14em; margin-top:4px; }
   #prog .kv { display:grid; grid-template-columns:auto auto; gap:3px 14px; align-items:baseline; }
-  #prog .kv .v { font:500 15px/1.2 var(--mono); text-align:right; }
-  #prog .kv .v.big { font-size:22px; color:var(--cy); }
-  #prog .kv .v small { color:var(--dim); font-size:11px; }
+  #prog .kv .v { font:500 19px/1.25 var(--mono); text-align:right; }
+  #prog .kv .v.big { font-size:40px; line-height:1; color:var(--cy); text-shadow:0 0 12px rgba(77,226,255,.45); }
+  #prog .kv .v small { color:var(--dim); font-size:15px; }
 
   /* 左中：即時數據 */
-  #tele { bottom:96px; right:16px; width:282px; }
-  #tele .feat { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; margin-bottom:10px; }
+  #tele { bottom:96px; right:16px; width:320px; }
+  #tele .feat { display:flex; align-items:center; gap:8px; font-size:18px; font-weight:600; margin-bottom:10px; }
   #tele .feat i { width:9px; height:9px; box-shadow:0 0 10px currentColor; background:currentColor; }
   #tele .spd { display:flex; align-items:baseline; gap:6px; }
   #tele .spd b { font:300 44px/1 var(--mono); letter-spacing:-.02em; }
-  #tele .spd span { color:var(--dim); font:12px var(--mono); }
+  #tele .spd span { color:var(--dim); font:14px var(--mono); }
   #tele .bars { margin:8px 0 10px; display:grid; gap:5px; }
   #tele .bar { display:grid; grid-template-columns:62px 1fr 64px; align-items:center; gap:8px; }
   #tele .bar .tr { height:4px; background:var(--cy4); position:relative; overflow:hidden; }
   #tele .bar .tr div { position:absolute; inset:0 auto 0 0; background:var(--cy); box-shadow:0 0 8px var(--cy); }
   #tele .bar .tr.amb div { background:var(--amb); box-shadow:0 0 8px var(--amb); }
-  #tele .bar .v { text-align:right; font:11px var(--mono); }
+  #tele .bar .v { text-align:right; font:13px var(--mono); }
   #spark { width:100%; height:52px; display:block; border-top:1px solid var(--cy4); border-bottom:1px solid var(--cy4); }
   #tele .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
-  #tele .grid3 .v { font:500 13px/1.3 var(--mono); }
+  #tele .grid3 .v { font:500 16px/1.3 var(--mono); }
 
   /* 右側：準備流程 / 圖例 + 層數量尺 */
-  #side { top:136px; right:16px; width:262px; }
-  .step { display:grid; grid-template-columns:16px 1fr auto; gap:8px; align-items:center; padding:4px 0; color:var(--dim2); font-size:12.5px; }
-  .step .ic { font:11px var(--mono); text-align:center; }
-  .step .d { font:10.5px var(--mono); }
+  #side { top:150px; right:16px; width:310px; }
+  .step { display:grid; grid-template-columns:16px 1fr auto; gap:8px; align-items:center; padding:5px 0; color:var(--dim2); font-size:15px; }
+  .step .ic { font:13px var(--mono); text-align:center; }
+  .step .d { font:13px var(--mono); }
   .step.done { color:var(--dim); } .step.done .ic { color:var(--ok); }
+  .step.skip { color:var(--dim2); text-decoration:line-through; }
   .step.cur { color:var(--fg); font-weight:600; } .step.cur .ic { color:var(--amb); animation:blink 1s steps(2) infinite; }
   .step.cur .d { color:var(--amb); }
   .sbar { height:2px; background:var(--cy4); margin:1px 0 4px 24px; } .sbar div { height:100%; background:var(--amb); box-shadow:0 0 6px var(--amb); }
@@ -84,9 +85,9 @@
   .cd b { font:300 30px/1 var(--mono); color:var(--amb); letter-spacing:.02em; text-shadow:0 0 10px rgba(255,181,71,.35); }
   .temps { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
   .temp { border:1px solid var(--cy3); padding:7px 9px; background:rgba(255,93,93,.03); }
-  .temp b { display:block; font:300 24px/1.1 var(--mono); color:var(--fg); }
-  .temp b small { font-size:12px; color:var(--dim); }
-  .waiting { margin-top:10px; font:11px var(--mono); color:var(--amb); letter-spacing:.04em; animation:blink 1.4s ease-in-out infinite; }
+  .temp b { display:block; font:300 30px/1.1 var(--mono); color:var(--fg); }
+  .temp b small { font-size:14px; color:var(--dim); }
+  .waiting { margin-top:10px; font:13px var(--mono); color:var(--amb); letter-spacing:.04em; animation:blink 1.4s ease-in-out infinite; }
   @keyframes blink { 50% { opacity:.35; } }
   .leg { display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; }
   .leg div { display:flex; align-items:center; gap:7px; color:#b6cfdb; font-size:11.5px; }
@@ -97,7 +98,7 @@
   #lg { position:absolute; right:22px; width:30px; top:150px; bottom:330px; cursor:ns-resize; }
   #lg .rail { position:absolute; left:13px; width:4px; top:0; bottom:0; background:repeating-linear-gradient(0deg, var(--cy3) 0 1px, transparent 1px 6px); }
   #lg .fill { position:absolute; left:13px; width:4px; bottom:0; background:linear-gradient(0deg, rgba(77,226,255,.25), var(--cy)); box-shadow:0 0 10px var(--cy2); }
-  #lg .mk { position:absolute; right:22px; transform:translateY(50%); font:600 11px var(--mono); color:var(--cy); white-space:nowrap; }
+  #lg .mk { position:absolute; right:22px; transform:translateY(50%); font:600 13px var(--mono); color:var(--cy); white-space:nowrap; }
   #lg .mk::after { content:""; position:absolute; right:-14px; top:50%; width:12px; height:1px; background:var(--cy); }
   #lg .top, #lg .bot { position:absolute; right:22px; font:9px var(--mono); color:var(--dim); }
   #lg .top { top:-4px; } #lg .bot { bottom:-4px; }
@@ -105,12 +106,12 @@
   /* 噴頭標籤 */
   #lead { position:absolute; inset:0; pointer-events:none; overflow:visible; }
   #callout { position:absolute; pointer-events:none; padding:5px 9px; border:1px solid var(--cy2); background:rgba(4,10,16,.78);
-    font:11px/1.35 var(--mono); white-space:nowrap; }
+    font:13px/1.4 var(--mono); white-space:nowrap; }
   #callout b { color:var(--cy); font-weight:600; }
 
   /* 左下：G-code 串流 */
   #term { left:16px; bottom:96px; width:360px; padding:10px 12px; }
-  #code { font:11px/1.6 var(--mono); white-space:pre; overflow:hidden; color:var(--dim2); }
+  #code { font:12.5px/1.6 var(--mono); white-space:pre; overflow:hidden; color:var(--dim2); }
   #code .c { color:var(--cy); background:rgba(77,226,255,.08); display:block; margin:0 -12px; padding:0 12px; border-left:2px solid var(--cy); }
   #code .n { color:#2e3d48; display:inline-block; width:50px; }
   #code .c .n { color:var(--cy2); }
@@ -129,7 +130,7 @@
   .trow { display:flex; justify-content:space-between; font:10.5px var(--mono); color:var(--dim); }
   .trow b { color:var(--fg); font-weight:500; }
   #ctl { display:flex; gap:4px; grid-row:span 2; align-items:center; }
-  .btn { border:1px solid var(--cy3); background:transparent; color:var(--dim); font:11px var(--mono); padding:5px 7px; cursor:pointer; }
+  .btn { border:1px solid var(--cy3); background:transparent; color:var(--dim); font:12.5px var(--mono); padding:5px 7px; cursor:pointer; }
   .btn:hover { color:var(--fg); border-color:var(--cy2); }
   .btn.on { color:#001018; background:var(--cy); border-color:var(--cy); }
 
@@ -147,12 +148,33 @@
   #drop b { color:var(--cy); font-size:20px; letter-spacing:.3em; }
   #drop.hl { background:rgba(77,226,255,.05); outline:1px dashed var(--cy); outline-offset:-20px; }
   .hide { display:none !important; }
-  .zlab { position:absolute; pointer-events:none; transform:translate(-50%,-100%); font:9.5px/1.4 var(--mono); letter-spacing:.12em; color:rgba(77,226,255,.55); white-space:nowrap; text-align:center; transition:color .3s; }
+  /* 即時模式不需要底部時間軸，下方面板往下貼齊 */
+  body.live #dock { display:none; }
+  body.live #tele, body.live #term { bottom:16px; }
+  @media (max-width: 700px) { body.live #prog { bottom:16px; } body.live #tele { bottom:136px; } }
+  /* 窄畫面（例如嵌在 Orca 的攝影機格、手機）：收掉次要面板 */
+  @media (max-width: 1100px) {
+    #term { display:none; }
+    #topbtns { left:16px; right:auto; transform:none; top:132px; }
+    #tele, #side { width:280px; }
+    #brand .t3 { font-size:12px; }
+    #lg { display:none; }
+  }
+  @media (max-width: 700px) {
+    #brand { right:16px; } #brand .t3, #thumb { display:none; }
+    #prog { top:auto; bottom:84px; right:16px; left:16px; padding:8px 12px; justify-content:space-between; }
+    #ring { width:64px; height:64px; } #ring svg { width:64px; height:64px; }
+    #side { top:92px; width:auto; left:16px; right:16px; }
+    #tele { width:auto; left:16px; right:16px; bottom:200px; padding:10px 12px; }
+    #tele .spd b { font-size:30px; } #tele .bars, #tele .grid3:not(#liveTemps) { display:none; }
+    #topbtns { display:none; }
+  }
+  .zlab { position:absolute; pointer-events:none; transform:translate(-50%,-100%); font:11.5px/1.4 var(--mono); letter-spacing:.12em; color:rgba(77,226,255,.55); white-space:nowrap; text-align:center; transition:color .3s; }
   .zlab.on { color:var(--amb); text-shadow:0 0 8px rgba(255,181,71,.6); font-weight:600; }
   .anno { position:absolute; pointer-events:none; font:9.5px/1.45 var(--mono); letter-spacing:.14em; color:var(--cy); text-transform:uppercase; white-space:nowrap; transform:translate(-50%,-100%); text-align:center; }
   .anno span { display:block; color:var(--dim); letter-spacing:.06em; font-size:9px; text-transform:none; }
   .chip { display:inline-block; width:10px; height:10px; border:1px solid rgba(255,255,255,.35); vertical-align:-1px; margin-right:4px; }
-  .fils { margin-top:5px; display:flex; gap:8px; flex-wrap:wrap; font:10.5px var(--mono); color:var(--dim); }
+  .fils { margin-top:5px; display:flex; gap:8px; flex-wrap:wrap; font:12px var(--mono); color:var(--dim); }
   #tcBadge { color:var(--amb); }
   /* 開場 */
   #hudRoot > * { transition: opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1); }
@@ -204,7 +226,7 @@
 
     <div id="prog" class="pane">
       <div id="ring">
-        <svg width="92" height="92"><circle cx="46" cy="46" r="40" fill="none" stroke="rgba(77,226,255,.1)" stroke-width="4"/>
+        <svg width="92" height="92" viewBox="0 0 92 92"><circle cx="46" cy="46" r="40" fill="none" stroke="rgba(77,226,255,.1)" stroke-width="4"/>
           <circle cx="46" cy="46" r="40" fill="none" stroke="rgba(77,226,255,.12)" stroke-width="10" stroke-dasharray="1 5.28"/>
           <circle id="arc" cx="46" cy="46" r="40" fill="none" stroke="#4de2ff" stroke-width="4" stroke-linecap="butt" style="filter:drop-shadow(0 0 4px #4de2ff)"/></svg>
         <div class="pct"><b id="pct">0%</b><span>PROGRESS</span></div>
@@ -645,7 +667,7 @@ let layerStart = [];
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); composer.setPixelRatio(devicePixelRatio); wireMat.resolution.set(w, h); curWireMat.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
   placeGauge(); }
 // 層數量尺放在右側、即時數據上方
-function placeGauge() { const t = $('tele'); if (!t || !t.offsetHeight) return; $('lg').style.bottom = (innerHeight - t.getBoundingClientRect().top + 16) + 'px'; }
+function placeGauge() { const pr = $('prog'); if (pr && pr.offsetHeight && innerWidth > 700) $('side').style.top = (pr.getBoundingClientRect().bottom + 12) + 'px'; else $('side').style.top = ''; const t = $('tele'); if (!t || !t.offsetHeight) return; $('lg').style.bottom = (innerHeight - t.getBoundingClientRect().top + 16) + 'px'; }
 addEventListener('resize', resize);
 
 // 底板：只畫格線，以模型為中心越遠越淡
@@ -1077,6 +1099,7 @@ function updateHUD(m) {
 
   if (live.on) liveHUD(m);
   updateSide(m);
+  placeGauge();
 }
 
 function updateSide(m) {
@@ -1087,14 +1110,17 @@ function updateSide(m) {
   let cur = prep.length - 1;
   for (let k = 0; k < prep.length; k++) if (t >= prep[k].t0) cur = k;
   // 即時模式：目前步驟以印表機回報的 stg_cur 為準
-  if (live.on && live.follow && live.st?.stg_cur > 0) { for (let k = 0; k < prep.length; k++) if (prep[k].code === live.st.stg_cur && k <= cur + 1) cur = k; }
+  const L = live.on && live.follow && live.stepIdx >= 0;
+  if (L) cur = live.stepIdx;
   // 倒數：目前步驟顯示還剩多久、進度條往回縮（不顯示整體倒數，實機每台每次狀態不同）
   let h = `<div class="hd"><span class="tag" style="color:var(--amb)">準備程序 PRE-FLIGHT</span><span class="ln"></span></div>`;
   prep.forEach((p, k) => {
-    const cls = k < cur ? 'done' : k === cur ? 'cur' : '';
-    const ic = k < cur ? '■' : k === cur ? '▶' : '□';
+    // 即時模式：之前的步驟沒出現過＝印表機跳過了（例如這次不做擠出校準）
+    const skip = L && k < cur && !live.seen.has(p.code);
+    const cls = skip ? 'skip' : k < cur ? 'done' : k === cur ? 'cur' : '';
+    const ic = skip ? '–' : k < cur ? '■' : k === cur ? '▶' : '□';
     const dur = p.t1 - p.t0;
-    const d = k < cur ? '完成' : k === cur ? (dur < 1 ? '--:--' : '-' + fmtT(Math.max(0, p.t1 - t))) : (dur < 1 ? '--:--' : fmtT(dur));
+    const d = skip ? '略過' : k < cur ? '完成' : (k === cur && L && t >= p.t1 - 0.1) ? '進行中' : k === cur ? (dur < 1 ? '--:--' : '-' + fmtT(Math.max(0, p.t1 - t))) : (dur < 1 ? '--:--' : fmtT(dur));
     h += `<div class="step ${cls}"><span class="ic">${ic}</span><span>${stageName(p.code)}</span><span class="d">${d}</span></div>`;
     if (k === cur) h += `<div class="sbar"><div style="width:${Math.max(0, 100 - (t - p.t0) / (dur || 1) * 100)}%"></div></div>`;
   });
@@ -1482,7 +1508,10 @@ addEventListener('keydown', e => {
 
 let last = performance.now();
 let loopErr = null;
-renderer.setAnimationLoop(now => { try { loop(now); } catch (e) { if (!loopErr) { loopErr = e; console.error(e); document.title = 'ERR ' + e.message; } } });
+// 有些內嵌瀏覽器（例如 Orca 的攝影機格）在背景會停掉 requestAnimationFrame，用計時器補畫
+let lastFrame = 0;
+setInterval(() => { const n = performance.now(); if (n - lastFrame > 400) { try { loop(n); } catch (e) { console.error(e); } } }, 200);
+renderer.setAnimationLoop(now => { lastFrame = performance.now(); try { loop(now); } catch (e) { if (!loopErr) { loopErr = e; console.error(e); document.title = 'ERR ' + e.message; } } });
 function loop(now) {
   const dt = (now - last) / 1000; last = now;
   if (intro) stepIntro(now);
@@ -1501,7 +1530,14 @@ resize();
 
 // ---------- 即時模式：從後端（server.mjs）的 SSE 拿印表機狀態 ----------
 // 位置的來源（由準到粗）：mc_print_line_number（正在執行第幾行）→ layer_num（換層對齊＋G-code 時間往前推）→ stg_cur（準備步驟）
-const live = { on: false, st: null, fileUrl: null, follow: true, ref: null, layer: -1, layerAt: 0, stage: -1, stageAt: 0, lastLine: -1 };
+const live = { on: false, st: null, fileUrl: null, follow: true, ref: null, layer: -1, layerAt: 0, stage: -1, stageAt: 0, lastLine: -1,
+  pct: -1, pctAt: 0, stepIdx: -1, seen: new Set() };   // stepIdx：實際走到準備清單第幾步；seen：實際出現過的步驟
+// 進度 % → 時間：切片軟體在 G-code 裡寫的 M73 P 點（準備階段印表機也會照這個回報 mc_percent）
+function pctTime(p) { for (const [idx, P] of data.anchors) if (P >= p) return data.moves[Math.min(idx, data.moves.length - 1)].t0; return data.total; }
+function liveStep(code) {   // 依實際回報的 stg_cur 往前推進準備清單（只往前，不往回）
+  const prep = data.segments.filter(q => q.code !== 0);
+  for (let k = Math.max(0, live.stepIdx); k < prep.length; k++) if (prep[k].code === code) { live.stepIdx = k; return; }
+}
 const STATE_ZH = { IDLE: '待機中', PREPARE: '準備中', RUNNING: '列印中', PAUSE: '已暫停', FINISH: '已完成', FAILED: '列印失敗', SLICING: '切片中' };
 function lineToMove(line) {   // 找「行號 ≤ line」的最後一個移動
   const mv = data.moves; let lo = 0, hi = mv.length - 1;
@@ -1509,12 +1545,20 @@ function lineToMove(line) {   // 找「行號 ≤ line」的最後一個移動
   return lo;
 }
 function onLiveStatus(s) {
+  if (s.ver) { if (live.ver && s.ver !== live.ver) return location.reload(); live.ver = s.ver; }
   live.st = s.print || {};
   const p = live.st, now = performance.now();
   const ln = +p.mc_print_line_number || 0;
   if (data && ln > 0 && ln !== live.lastLine) { live.lastLine = ln; const m = data.moves[lineToMove(ln - 1)]; live.ref = { t: m.t0, at: now }; }
   if (p.layer_num !== live.layer) { live.layer = p.layer_num; live.layerAt = now; }
+  // 準備步驟：用後端記下的歷史依序推進（重新整理頁面也接得上）
+  if (data && s.stgHist && s.stgHist.length !== live.histLen) {
+    live.seen = new Set(); live.stepIdx = -1;
+    for (const c of s.stgHist) { live.seen.add(c); liveStep(c); }
+    live.histLen = s.stgHist.length;
+  }
   if (p.stg_cur !== live.stage) { live.stage = p.stg_cur; live.stageAt = now; }
+  if (p.mc_percent !== live.pct) { live.pct = p.mc_percent; live.pctAt = now; }
   // 狀態標示
   const b = $('liveBadge'); b.classList.remove('hide');
   b.innerHTML = s.connected ? `<span style="color:${p.gcode_state === 'RUNNING' ? '#5ef2a0' : p.gcode_state === 'PAUSE' || p.gcode_state === 'FAILED' ? '#ff5d5d' : '#ffb547'}">●</span> ${s.sim ? 'SIM' : 'LIVE'}　${STATE_ZH[p.gcode_state] || p.gcode_state || '—'}`
@@ -1535,8 +1579,12 @@ function liveTarget() {
     const s0 = layerStart[L], s1 = layerStart[L + 1] ?? data.total;
     return Math.min(s1 - 0.05, s0 + (paused ? 0 : (now - live.layerAt) / 1000 * spd));
   }
-  const seg = data.segments.find(q => q.code === p.stg_cur && q.code !== 0);
-  if (seg) return Math.min(seg.t1 - 0.05, seg.t0 + (now - live.stageAt) / 1000);
+  // 準備階段：用目前步驟（stg_cur）和進度 %（M73 點）一起夾出範圍，再依經過時間往前推
+  const prep = data.segments.filter(q => q.code !== 0), seg = prep[live.stepIdx];
+  let lo = seg ? seg.t0 : 0, hi = seg ? seg.t1 : data.printStart;
+  if (live.pct >= 0) { const a = pctTime(live.pct), b = pctTime(live.pct + 1);
+    if (a < hi && b > lo) { lo = Math.max(lo, a); hi = Math.min(hi, b); } }
+  return Math.min(hi - 0.05, lo + (now - Math.max(live.stageAt, live.pctAt)) / 1000);
   return t;
 }
 function stepLive(dt) {
@@ -1573,12 +1621,13 @@ function setLiveFollow(on) {
 }
 async function startLive() {
   live.on = true;
+  document.body.classList.add('live');
   $('play').classList.add('hide'); $('ctl').classList.add('hide');
   const es = new EventSource('/api/events');
   es.addEventListener('status', e => onLiveStatus(JSON.parse(e.data)));
   es.addEventListener('file', async e => {
     const f = JSON.parse(e.data); if (f.url === live.fileUrl) return;
-    live.fileUrl = f.url;
+    live.fileUrl = f.url; live.stepIdx = -1; live.seen = new Set(); live.stage = -1; live.pct = -1; live.histLen = -1;
     try { const buf = await (await fetch(f.url)).arrayBuffer(); await openBuffer(buf, f.name); live.ref = null; live.lastLine = -1; setLiveFollow(true); }
     catch (err) { console.error('讀不了印表機的檔案', err); }
   });

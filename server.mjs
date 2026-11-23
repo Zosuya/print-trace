@@ -20,7 +20,7 @@ const simIdx = process.argv.indexOf('--sim');
 const SIM = simIdx > 0 ? process.argv[simIdx + 1] : null;
 
 // ---------- 狀態與 SSE ----------
-const state = { connected: false, print: {}, file: null, updated: 0 };
+const state = { connected: false, print: {}, file: null, updated: 0, stgHist: [], job: '' };
 const clients = new Set();
 function broadcast(type, data) {
   const msg = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -37,13 +37,23 @@ const KEYS = ['gcode_state', 'stg_cur', 'mc_print_stage', 'layer_num', 'total_la
   'print_type', 'mc_print_line_number', 'sdcard', 'print_error', 'wifi_signal', 'cooling_fan_speed', 'heatbreak_fan_speed'];
 function snapshot() {
   const p = {}; for (const k of KEYS) if (k in state.print) p[k] = state.print[k];
-  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated };
+  // ver：index.html 改過就會變，網頁看到不同就自動重新整理（嵌在 Orca 裡沒辦法手動重整）
+  let ver = 0; try { ver = statSync(join(ROOT, 'index.html')).mtimeMs; } catch { }
+  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated, ver, stgHist: state.stgHist };
 }
 function applyReport(p) {
   Object.assign(state.print, p);
+  trackStages();
   state.updated = Date.now();
   pushStatus();
   maybeFetchFile();
+}
+
+// 記下這次列印實際出現過的準備步驟（網頁重新整理也能知道哪些做過、哪些被跳過）
+function trackStages() {
+  const p = state.print, job = (p.subtask_name || '') + '|' + (p.gcode_file || '');
+  if (job !== state.job) { state.job = job; state.stgHist = []; }
+  const s = p.stg_cur; if (s > 0 && s < 255 && state.stgHist[state.stgHist.length - 1] !== s) state.stgHist.push(s);
 }
 
 // ---------- 下載正在印的檔案 ----------
@@ -103,6 +113,7 @@ async function startMqtt() {
   c.on('error', e => console.log('[mqtt]', e.message));
   c.on('message', (t, buf) => { try { const j = JSON.parse(buf.toString()); if (j.print) applyReport(j.print); } catch { } });
   setInterval(() => { if (state.connected) pushall(); }, 5 * 60 * 1000);
+  setInterval(() => broadcast('status', snapshot()), 2000);   // 定時推一次，網頁改版也能很快被偵測到
 }
 
 // ---------- 模擬列印：照檔案的 G-code 一行行往下跑，產生跟實機一樣的欄位 ----------

@@ -80,6 +80,8 @@
   .step.skip { color:var(--dim2); text-decoration:line-through; }
   .step.cur { color:var(--fg); font-weight:600; } .step.cur .ic { color:var(--amb); animation:blink 1s steps(2) infinite; }
   .step.cur .d { color:var(--amb); }
+  .sbar.run div { width:30% !important; animation:scan 1.6s ease-in-out infinite alternate; }
+  @keyframes scan { from { margin-left:0; } to { margin-left:70%; } }
   .sbar { height:2px; background:var(--cy4); margin:1px 0 4px 24px; } .sbar div { height:100%; background:var(--amb); box-shadow:0 0 6px var(--amb); }
   .cd { display:flex; align-items:baseline; justify-content:space-between; margin:-2px 0 10px; padding-bottom:8px; border-bottom:1px solid var(--cy4); }
   .cd b { font:300 30px/1 var(--mono); color:var(--amb); letter-spacing:.02em; text-shadow:0 0 10px rgba(255,181,71,.35); }
@@ -630,7 +632,7 @@ const holoMat = new THREE.ShaderMaterial({
 });
 const solidMat = new THREE.MeshLambertMaterial();
 // 線框：每條擠出路徑畫成一條粗細可調的線（顏色在 CPU 算好：越高越亮、目前層最亮）
-const wireMat = new LineMaterial({ vertexColors: true, linewidth: 2, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+const wireMat = new LineMaterial({ vertexColors: true, linewidth: 2, transparent: true, alphaToCoverage: false, depthWrite: false, blending: THREE.AdditiveBlending });
 // 線越粗疊得越密，亮度要跟著降，不然牆面會整片過曝
 // 正在印的那層獨立畫：最亮、稍粗，不受遠近調暗影響
 const curWireMat = new LineMaterial({ vertexColors: true, linewidth: 3, transparent: true, depthWrite: false, blending: THREE.NormalBlending, opacity: 1 });
@@ -668,7 +670,8 @@ const rim = new THREE.DirectionalLight('#4de2ff', 0.8); rim.position.set(200, 25
 // 光暈後製：只讓亮的部分（目前層、噴頭、邊光、掃描面）散光，暗的不糊
 // 後製會吃掉透明背景，所以背景改由場景自己畫（顏色接近原本的漸層中心）
 scene.background = new THREE.Color('#08111a');
-const composer = new EffectComposer(renderer);
+// 後製的中間畫布要開多重取樣（MSAA），不然開了光暈線條會變鋸齒
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * devicePixelRatio, innerHeight * devicePixelRatio, { samples: 8, type: THREE.HalfFloatType }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.55, 0.32);
 composer.addPass(bloom);
@@ -802,8 +805,7 @@ function load(d, name) {
   $('lgTop').textContent = 'L' + (data.layers.length - 1);
   drawTrack();
   buildShell();
-  buildZones();
-  buildPlate();
+  // 熱床外形、準備區域不再顯示（準備階段 3D 不跟噴頭）
   setTime(0);
   startIntro();
 }
@@ -1031,7 +1033,9 @@ function setTime(time) {
   const i = findMove(t); curMove = i;
   const m = data.moves[i];
   const frac = m.t1 > m.t0 ? Math.min(1, Math.max(0, (t - m.t0) / (m.t1 - m.t0))) : 1;
-  const wantStart = $('showStart').checked || m.layer === 0;
+  // 即時模式的準備階段不畫起始程序的路徑、不顯示噴頭
+  const prepHold = live.on && m.layer === 0;
+  const wantStart = $('showStart').checked || (m.layer === 0 && !prepHold);
   if (wantStart !== startShown) { startShown = wantStart; for (let k = 0; k < instCount && data.moves[extIdx[k]].layer === 0; k++) setInst(k, 1); }
   if (lastPartial >= 0 && lastPartial < instCount) setInst(lastPartial, 1);
   let count = m.instBefore;
@@ -1045,7 +1049,7 @@ function setTime(time) {
   extMesh.instanceMatrix.needsUpdate = true;
   travel.geometry.setDrawRange(0, (m.trav >= 0 ? m.trav + 1 : m.travBefore) * 2);
   nozPos.set(m.x0 + (m.x1 - m.x0) * frac, m.y0 + (m.y1 - m.y0) * frac, m.z0 + (m.z1 - m.z0) * frac);
-  nozzle.position.copy(nozPos);
+  nozzle.position.copy(nozPos); nozzle.visible = !prepHold;
   // 噴頭下方的虛線一路打到床面
   const ud = nozzle.userData;
   ud.beam.geometry.setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -nozPos.z)]); ud.beam.computeLineDistances();
@@ -1134,9 +1138,10 @@ function updateSide(m) {
     const cls = skip ? 'skip' : k < cur ? 'done' : k === cur ? 'cur' : '';
     const ic = skip ? '–' : k < cur ? '■' : k === cur ? '▶' : '□';
     const dur = p.t1 - p.t0;
-    const d = skip ? '略過' : k < cur ? '完成' : (k === cur && L && t >= p.t1 - 0.1) ? '進行中' : k === cur ? (dur < 1 ? '--:--' : '-' + fmtT(Math.max(0, p.t1 - t))) : (dur < 1 ? '--:--' : fmtT(dur));
+    // 不計時：只標狀態（每台、每次的準備時間差很多，倒數反而誤導）
+    const d = skip ? '略過' : k < cur ? '完成' : k === cur ? '進行中' : '';
     h += `<div class="step ${cls}"><span class="ic">${ic}</span><span>${stageName(p.code)}</span><span class="d">${d}</span></div>`;
-    if (k === cur) h += `<div class="sbar"><div style="width:${Math.max(0, 100 - (t - p.t0) / (dur || 1) * 100)}%"></div></div>`;
+    if (k === cur) h += '<div class="sbar run"><div></div></div>';
   });
   const P = live.on && live.follow ? live.st : null;
   const tv = (cur, tgt) => P ? `${Math.round(cur ?? 0)}<small>/${Math.round(tgt ?? 0)}°C</small>` : `${tgt || '--'}<small>°C</small>`;
@@ -1188,7 +1193,7 @@ function updateAnnos() {
 }
 function updateCallout() {
   updateAnnos();
-  const show = data && $('showCall').checked;
+  const show = data && $('showCall').checked && !(live.on && data.moves[curMove]?.layer === 0);
   const cEl = $('callout');
   if (!show) { cEl.classList.add('hide'); $('leadL').setAttribute('stroke-opacity', 0); $('leadC').setAttribute('r', 0); return; }
   const v = nozPos.clone().project(camera);
@@ -1485,7 +1490,7 @@ let prepOptOut = false;   // 準備階段使用者自己關掉跟隨，就不再
 function userToggleFollow() { if (follow) { if (follow.auto) prepOptOut = true; follow.auto = false; toggleFollow(false); } else toggleFollow(true); }
 $('followBtn').onclick = userToggleFollow;
 // 準備階段自動跟隨噴頭，開始印第一層時自動回全景
-function autoFollow(m) { if (intro || !data) return;
+function autoFollow(m) { if (intro || !data || live.on) return;
   if (m.layer === 0) { if (!follow && !prepOptOut) toggleFollow(true, true); }
   else { prepOptOut = false; if (follow && follow.auto) toggleFollow(false, true); } }
 addEventListener('keydown', e => { if (e.code === 'KeyF' && data && !intro) userToggleFollow(); });
@@ -1623,14 +1628,50 @@ function liveTarget() {
   return Math.min(hi - 0.05, lo + (now - Math.max(live.stageAt, live.pctAt)) / 1000);
   return t;
 }
+// 列印中的播放：畫面一直往前跑、不停也不跳，刻意落後實際一點點。
+//   速度 = 校正後的推算速度 ×（依落後多少微調）
+//   收到換層時畫面那層還沒畫完 → 照樣畫完，速度自動拉高把下一層補上
+//   推算跑太快、快到層尾還沒收到換層 → 只減速不停住
+const LAG = 2.0;          // 想要落後實際幾秒（G-code 時間）
+let playV = 1;            // 目前播放速度（G-code 秒／實際秒）
 function stepLive(dt) {
   if (!live.on || !live.st || !data || intro || !live.follow) return;
-  const tgt = liveTarget(), d = tgt - t;
-  // 小差距平滑追上，大差距（剛連上、跳行）直接跳過去
-  if (Math.abs(d) > 30) setTime(tgt); else if (Math.abs(d) > 0.001) setTime(t + d * (1 - Math.exp(-dt * 5)));
+  const p = live.st, L = p.layer_num || 0, spd = (p.spd_mag || 100) / 100;
+  if (p.gcode_state === 'FINISH') { if (t < data.total) setTime(Math.min(data.total, t + dt * 6)); return; }
+  if (L > 0 && layerStart[L] !== undefined && p.gcode_state !== 'IDLE') {
+    const paused = p.gcode_state === 'PAUSE';
+    const base = spd * live.rate;
+    const s0 = layerStart[L], s1 = layerStart[L + 1] ?? data.total;
+    // 差太多（剛連上、斷線很久）才直接跳到這層開頭
+    const far = Math.min(s0 - 60, layerStart[Math.max(1, L - 3)] ?? 0);
+    if (t < far || t > s1 + 1) { setTime(s0); live.plan = { L, v: base }; return; }
+    // 換層時定一次這層的速度：原本速度 ＋ 上一層還沒畫完的量平均攤到這層，整層固定不變
+    if (!live.plan || live.plan.L !== L) {
+      const behind = Math.max(0, s0 - t), len = Math.max(0.5, s1 - s0);
+      // 刻意慢一點點（0.92），讓畫面略落後實際、不會先跑到層尾等；落後的部分下一層自動補
+      live.plan = { L, v: base * 0.92 * (1 + behind / len) };
+    }
+    if (paused) return;
+    let v = live.plan.v;
+    // 已經畫到層尾、印表機還沒換層：慢慢減速，不停住
+    const room = s1 - 0.02 - t;
+    if (room < base) v = Math.min(v, Math.max(0.06 * base, room));
+    setTime(Math.min(t + v * dt, s1 - 0.02));
+    if (qs.get('debug') && (live._dbg = (live._dbg || 0) + dt) > 2) { live._dbg = 0; console.warn(`L${L} v=${v.toFixed(2)} base=${base.toFixed(2)} 畫面在層內 ${((t - s0) / (s1 - s0) * 100).toFixed(0)}%`); }
+    return;
+  }
+  // 準備階段：3D 不動，停在第一層開頭（噴頭隱藏），等開始列印才跟著跑
+  if (data.printStart && Math.abs(t - data.printStart) > 0.01) setTime(data.printStart);
 }
 function liveHUD(m) {
   const p = live.st; if (!p) return;
+  if (m.layer === 0 && live.follow) {   // 準備階段不推算噴頭：只顯示印表機回報的步驟
+    const sc = p.stg_cur > 0 && p.stg_cur < 255 ? p.stg_cur : null;
+    $('feat').innerHTML = `<i style="color:var(--amb)"></i><span>${sc ? stageName(sc) : '準備中'}</span>`;
+    $('spd').textContent = '—'; $('bF').style.width = $('bA').style.width = '0%'; $('vF').textContent = $('vA').textContent = '—';
+    $('pX').textContent = $('pY').textContent = $('pZ').textContent = '—';
+    $('code').innerHTML = ''; $('termPos').textContent = '';
+  }
   $('liveTemps').classList.remove('hide');
   $('pN').textContent = `${Math.round(p.nozzle_temper ?? 0)}/${Math.round(p.nozzle_target_temper ?? 0)}°`;
   $('pB').textContent = `${Math.round(p.bed_temper ?? 0)}/${Math.round(p.bed_target_temper ?? 0)}°`;
@@ -1664,7 +1705,7 @@ async function startLive() {
   es.addEventListener('status', e => onLiveStatus(JSON.parse(e.data)));
   es.addEventListener('file', async e => {
     const f = JSON.parse(e.data); if (f.url === live.fileUrl) return;
-    live.fileUrl = f.url; live.stepIdx = -1; live.seen = new Set(); live.stage = -1; live.pct = -1; live.histLen = -1; live.rate = 1; live.layerSeen = false; live.hist = [];
+    live.fileUrl = f.url; live.stepIdx = -1; live.seen = new Set(); live.stage = -1; live.pct = -1; live.histLen = -1; live.rate = 1; live.layerSeen = false; live.hist = []; live.plan = null;
     try { const buf = await (await fetch(f.url)).arrayBuffer(); await openBuffer(buf, f.name); live.ref = null; live.lastLine = -1; setLiveFollow(true); }
     catch (err) { console.error('讀不了印表機的檔案', err); }
   });

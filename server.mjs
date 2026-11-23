@@ -15,7 +15,7 @@ const CACHE = join(ROOT, 'cache');
 mkdirSync(CACHE, { recursive: true });
 const cfgPath = join(ROOT, 'config.local.json');
 const cfg = existsSync(cfgPath) ? JSON.parse(readFileSync(cfgPath, 'utf8').replace(/^﻿/, '')) : {};
-const PORT = cfg.port || 8765;
+const PORT = +process.env.PORT || cfg.port || 8765;
 const simIdx = process.argv.indexOf('--sim');
 const SIM = simIdx > 0 ? process.argv[simIdx + 1] : null;
 

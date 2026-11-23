@@ -9,6 +9,7 @@ import { readFileSync, existsSync, mkdirSync, statSync, createReadStream, writeF
 import { join, extname, basename, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { execFile } from 'node:child_process';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const CACHE = join(ROOT, 'cache');
@@ -118,7 +119,7 @@ async function downloadCurrent(p) {
 }
 
 // ---------- 接實機 MQTT ----------
-async function startMqtt() {
+async function startMqtt() {   // 回傳停止用的函式
   const mqtt = (await import('mqtt')).default;
   const c = mqtt.connect(`mqtts://${cfg.ip}:8883`, { username: 'bblp', password: cfg.accessCode, rejectUnauthorized: false, reconnectPeriod: 5000, connectTimeout: 10000 });
   const pushall = () => c.publish(`device/${cfg.serial}/request`, JSON.stringify({ pushing: { sequence_id: String(Date.now()), command: 'pushall' } }));
@@ -130,8 +131,9 @@ async function startMqtt() {
   c.on('close', () => { if (state.connected) console.log('[mqtt] 斷線，重試中'); state.connected = false; pushStatus(); });
   c.on('error', e => console.log('[mqtt]', e.message));
   c.on('message', (t, buf) => { try { const j = JSON.parse(buf.toString()); if (j.print) applyReport(j.print); } catch { } });
-  setInterval(() => { if (state.connected) pushall(); }, 5 * 60 * 1000);
-  setInterval(() => broadcast('status', snapshot()), 2000);   // 定時推一次，網頁改版也能很快被偵測到
+  const t1 = setInterval(() => { if (state.connected) pushall(); }, 5 * 60 * 1000);
+  const t2 = setInterval(() => broadcast('status', snapshot()), 2000);   // 定時推一次，網頁改版也能很快被偵測到
+  return () => { clearInterval(t1); clearInterval(t2); c.end(true); state.connected = false; console.log('[mqtt] 已中斷'); };
 }
 
 // ---------- 模擬列印：照檔案的 G-code 一行行往下跑，產生跟實機一樣的欄位 ----------
@@ -186,7 +188,7 @@ function startSim(path) {
 // ---------- HTTP ----------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.stl': 'application/octet-stream', '.3mf': 'application/octet-stream', '.gcode': 'text/plain', '.json': 'application/json' };
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/api/status') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); return res.end(JSON.stringify(snapshot())); }
   if (url.pathname === '/api/events') {
@@ -203,6 +205,42 @@ http.createServer((req, res) => {
   if (!f.startsWith(ROOT) || /config\.local|node_modules|[\\/]\./.test(f) || !existsSync(f) || statSync(f).isDirectory()) { res.writeHead(404); return res.end('not found'); }
   res.writeHead(200, { 'content-type': MIME[extname(f).toLowerCase()] || 'application/octet-stream', 'cache-control': 'no-store' });
   createReadStream(f).pipe(res);
-}).listen(PORT, '0.0.0.0', () => console.log(`PRINT//TRACE 在 http://localhost:${PORT}/ ${SIM ? '（模擬模式）' : ''}`));
+});
+// 預設只給本機看；要給區網其他裝置（手機、平板）看，在 config.local.json 設 "host": "0.0.0.0"
+const HOST = cfg.host || '127.0.0.1';
+server.on('error', e => { console.log(e.code === 'EADDRINUSE' ? `port ${PORT} 已經有人在用（可能已經開著一個），結束` : e.message); process.exit(1); });
+let stopMqtt = null, running = false;
+async function start() {
+  if (running) return; running = true;
+  await new Promise(r => server.listen(PORT, HOST, r));
+  console.log(`PRINT//TRACE 在 http://localhost:${PORT}/ ${SIM ? '（模擬模式）' : ''}`);
+  if (SIM) startSim(SIM); else if (cfg.ip) stopMqtt = await startMqtt(); else console.log('沒有 config.local.json，只提供網頁');
+}
+function stop() {
+  if (!running) return; running = false;
+  stopMqtt?.(); stopMqtt = null;
+  for (const res of clients) res.end(); clients.clear();
+  server.close(); server.closeAllConnections?.();
+  console.log('[server] 已停止');
+}
 
-if (SIM) startSim(SIM); else if (cfg.ip) startMqtt(); else console.log('沒有 config.local.json，只提供網頁');
+// --with-slicer：跟著切片軟體開關。背景待命，偵測到 OrcaSlicer／Bambu Studio 在跑才啟動，關掉就停止
+const SLICERS = process.platform === 'win32' ? ['orca-slicer.exe', 'bambu-studio.exe'] : ['OrcaSlicer', 'BambuStudio', 'orca-slicer', 'bambu-studio'];
+function slicerRunning() {
+  return new Promise(resolve => {
+    const [cmd, args] = process.platform === 'win32' ? ['tasklist', ['/FO', 'CSV', '/NH']] : ['ps', ['-A', '-o', 'comm=']];
+    execFile(cmd, args, { windowsHide: true, maxBuffer: 8 << 20 }, (err, out) => {
+      if (err) return resolve(false);
+      const low = out.toLowerCase(); resolve(SLICERS.some(n => low.includes(n.toLowerCase())));
+    });
+  });
+}
+if (process.argv.includes('--with-slicer')) {
+  // 背景執行看不到視窗，訊息寫到 cache/server.log
+  const logFile = join(CACHE, 'server.log');
+  const orig = console.log;
+  console.log = (...a) => { const line = `${new Date().toLocaleString('zh-TW', { hour12: false })} ${a.join(' ')}`; orig(line); try { appendFileSync(logFile, line + '\n'); } catch { } };
+  console.log('[server] 待命中，等切片軟體開啟');
+  const tick = async () => { const on = await slicerRunning(); if (on && !running) { console.log('[server] 偵測到切片軟體，啟動'); await start(); } else if (!on && running) { console.log('[server] 切片軟體已關閉'); stop(); } };
+  tick(); setInterval(tick, 3000);
+} else start();

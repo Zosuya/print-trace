@@ -14,6 +14,18 @@ python3 -m http.server 8765
 
 網址參數（測試用）：`?file=xxx.gcode.3mf&at=秒數&render=wire|holo|solid|cloud&color=feature|filament&rot=度&zoom=倍數`
 
+## 跟著切片軟體自動開關（Windows）
+
+```powershell
+pwsh tools/autostart.ps1 install    # 登入後在背景待命，OrcaSlicer／Bambu Studio 開著才連印表機，關掉就停
+pwsh tools/autostart.ps1 status
+pwsh tools/autostart.ps1 uninstall
+```
+
+也可以手動：`node server.mjs --with-slicer`。紀錄在 `cache/server.log`。
+
+嵌進 Orca：裝置頁攝影機設定的自訂網址填 `http://localhost:8765/`。
+
 ## 目前功能
 
 - G-code 解析：G0/G1/G2/G3、相對／絕對座標、M83、FEATURE／LAYER 註解、M204 加速度、M73 進度、換料（T/M620/M621）、溫度（M104/M109/M140/M190）

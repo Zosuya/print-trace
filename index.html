@@ -552,6 +552,9 @@ const STAGE_COLOR = { [-1]: '#6b717c', 1: '#4aa3ff', 2: '#ff6b5e', 3: '#a05cc8',
   13: '#9aa0aa', 14: '#39c0c0', 24: '#ff9f43', 0: '#ff8a3d' };
 const stageName = c => STAGE_ZH[c] ?? `步驟 ${c}`;
 // 把連續同一步驟的移動合成一段（只看準備階段，第 1 層之後全部算「列印中」）
+// 準備清單：即時模式拿掉印表機不會回報的步驟（例如 24 加熱並準備線材）
+const UNREPORTED = new Set([-1, 24]);
+function prepSteps() { return data.segments.filter(q => q.code !== 0 && !(live.on && UNREPORTED.has(q.code))); }
 function buildSegments(data) {
   const segs = [];
   for (let i = 0; i < data.moves.length; i++) {
@@ -1124,7 +1127,7 @@ function updateSide(m) {
   const box = $('side');
   if (m.layer > 0) { box.style.display = 'none'; sideMode = ''; return; }
   box.style.display = ''; sideMode = 'prep';
-  const prep = data.segments.filter(s => s.code !== 0);
+  const prep = prepSteps();
   let cur = prep.length - 1;
   for (let k = 0; k < prep.length; k++) if (t >= prep[k].t0) cur = k;
   // 即時模式：目前步驟以印表機回報的 stg_cur 為準
@@ -1566,7 +1569,7 @@ function calibrate(prevLayer, newLayer, now) {
 // 進度 % → 時間：切片軟體在 G-code 裡寫的 M73 P 點（準備階段印表機也會照這個回報 mc_percent）
 function pctTime(p) { for (const [idx, P] of data.anchors) if (P >= p) return data.moves[Math.min(idx, data.moves.length - 1)].t0; return data.total; }
 function liveStep(code) {   // 依實際回報的 stg_cur 往前推進準備清單（只往前，不往回）
-  const prep = data.segments.filter(q => q.code !== 0);
+  const prep = prepSteps();
   for (let k = Math.max(0, live.stepIdx); k < prep.length; k++) if (prep[k].code === code) { live.stepIdx = k; return; }
 }
 const STATE_ZH = { IDLE: '待機中', PREPARE: '準備中', RUNNING: '列印中', PAUSE: '已暫停', FINISH: '已完成', FAILED: '列印失敗', SLICING: '切片中' };
@@ -1580,6 +1583,8 @@ function onLiveStatus(s) {
   live.st = s.print || {};
   // 印表機回報縮時攝影有沒有開，決定 G-code 裡的縮時區塊要不要算進去
   const tl = s.print?.ipcam?.timelapse; if (tl) gcodeFlags.timelapse_record_flag = tl === 'enable' ? 1 : 0;
+  // 調平、擠出校準做不做是印表機自己判斷的，照上一次實際有沒有做來猜
+  if (s.lastPrep?.length) { gcodeFlags.g29_before_print_flag = s.lastPrep.includes(1) ? 1 : 0; gcodeFlags.extrude_cali_flag = s.lastPrep.includes(8) ? 1 : 0; }
   const p = live.st, now = performance.now();
   const ln = +p.mc_print_line_number || 0;
   if (data && ln > 0 && ln !== live.lastLine) { live.lastLine = ln; const m = data.moves[lineToMove(ln - 1)]; live.ref = { t: m.t0, at: now }; }
@@ -1621,7 +1626,7 @@ function liveTarget() {
     return Math.min(s1 - 0.05, s0 + el * spd * live.rate);
   }
   // 準備階段：用目前步驟（stg_cur）和進度 %（M73 點）一起夾出範圍，再依經過時間往前推
-  const prep = data.segments.filter(q => q.code !== 0), seg = prep[live.stepIdx];
+  const prep = prepSteps(), seg = prep[live.stepIdx];
   let lo = seg ? seg.t0 : 0, hi = seg ? seg.t1 : data.printStart;
   if (live.pct >= 0) { const a = pctTime(live.pct), b = pctTime(live.pct + 1);
     if (a < hi && b > lo) { lo = Math.max(lo, a); hi = Math.min(hi, b); } }

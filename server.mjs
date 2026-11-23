@@ -39,7 +39,7 @@ function snapshot() {
   const p = {}; for (const k of KEYS) if (k in state.print) p[k] = state.print[k];
   // ver：index.html 改過就會變，網頁看到不同就自動重新整理（嵌在 Orca 裡沒辦法手動重整）
   let ver = 0; try { ver = statSync(join(ROOT, 'index.html')).mtimeMs; } catch { }
-  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated, ver, stgHist: state.stgHist };
+  return { connected: state.connected, sim: !!SIM, print: p, file: state.file, updated: state.updated, ver, stgHist: state.stgHist, lastPrep };
 }
 function applyReport(p) {
   Object.assign(state.print, p);
@@ -52,6 +52,8 @@ function applyReport(p) {
 // 記下這次列印實際出現過的準備步驟（網頁重新整理也能知道哪些做過、哪些被跳過）
 // 同時把每一步的實際開始時間記下來，開始印第一層時寫進 cache/prep-log.jsonl（之後拿來修正預估）
 let prepRec = null;
+// 上一次實際做過哪些準備步驟（網頁用來猜這次會不會調平、擠出校準）
+let lastPrep = []; try { const l = readFileSync(join(CACHE, 'prep-log.jsonl'), 'utf8').trim().split('\n').pop(); lastPrep = JSON.parse(l).steps.map(x => x.code); } catch { }
 function trackStages() {
   const p = state.print, job = (p.subtask_name || '') + '|' + (p.gcode_file || '');
   if (job !== state.job) { state.job = job; state.stgHist = []; prepRec = null; }
@@ -62,7 +64,7 @@ function trackStages() {
       const lastStep = prepRec.steps[prepRec.steps.length - 1];
       if (s > 0 && s < 255 && lastStep?.code !== s) prepRec.steps.push({ code: s, at: now });
       if ((p.layer_num || 0) > 0) {
-        prepRec.done = true; prepRec.printStart = now;
+        prepRec.done = true; prepRec.printStart = now; lastPrep = prepRec.steps.map(x => x.code);
         prepRec.steps.forEach((st, i) => { st.sec = Math.round(((prepRec.steps[i + 1]?.at ?? now) - st.at) / 100) / 10; });
         try { appendFileSync(join(CACHE, 'prep-log.jsonl'), JSON.stringify({ ...prepRec, totalSec: Math.round((now - prepRec.start) / 1000) }) + '\n'); } catch { }
         console.log('[prep] 準備階段共', Math.round((now - prepRec.start) / 1000), '秒：', prepRec.steps.map(x => `${x.code}:${x.sec}s`).join(' '));
@@ -105,7 +107,7 @@ async function downloadCurrent(p) {
     }
     for (const g of [...new Set(guesses.filter(Boolean))]) {
       try {
-        const local = join(CACHE, basename(g).replace(/[^\w.\-]+/g, '_'));
+        const local = join(CACHE, basename(g).replace(/[^\p{L}\p{N}.\-_]+/gu, '_'));
         await c.downloadTo(local, g);
         if (statSync(local).size > 100) return { name: basename(g), url: '/cache/' + encodeURIComponent(basename(local)) };
       } catch { }
@@ -149,7 +151,7 @@ function startSim(path) {
   const text = /\.3mf$/i.test(path) ? readZipEntry(buf, n => /plate_\d+\.gcode$/.test(n)).toString() : buf.toString();
   const lines = text.split('\n');
   const total = (text.match(/^; CHANGE_LAYER/gm) || []).length;
-  const local = join(CACHE, 'sim_' + basename(path).replace(/[^\w.\-]+/g, '_'));
+  const local = join(CACHE, 'sim_' + basename(path).replace(/[^\p{L}\p{N}.\-_]+/gu, '_'));
   writeFileSync(local, buf);
   state.file = { name: basename(path), url: '/cache/' + encodeURIComponent(basename(local)) };
   state.connected = true;

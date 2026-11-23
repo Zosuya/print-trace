@@ -36,7 +36,7 @@
 ## 安裝
 
 ```sh
-git clone https://github.com/Wanstagram/print-trace.git
+git clone https://github.com/Zosuya/print-trace.git
 cd print-trace
 npm install
 ```

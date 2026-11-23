@@ -1542,7 +1542,19 @@ resize();
 // ---------- 即時模式：從後端（server.mjs）的 SSE 拿印表機狀態 ----------
 // 位置的來源（由準到粗）：mc_print_line_number（正在執行第幾行）→ layer_num（換層對齊＋G-code 時間往前推）→ stg_cur（準備步驟）
 const live = { on: false, st: null, fileUrl: null, follow: true, ref: null, layer: -1, layerAt: 0, stage: -1, stageAt: 0, lastLine: -1,
-  pct: -1, pctAt: 0, stepIdx: -1, seen: new Set() };   // stepIdx：實際走到準備清單第幾步；seen：實際出現過的步驟
+  pct: -1, pctAt: 0, stepIdx: -1, seen: new Set(),
+  rate: 1, layerSeen: false, pausedMs: 0, pauseAt: 0 };   // rate：自動校正的推算速度（實際 ÷ 預估）
+// 換層時比較「這層預估要多久」和「實際花了多久」，平滑更新推算速度
+function calibrate(prevLayer, newLayer, now) {
+  if (!data || !live.layerSeen || newLayer !== prevLayer + 1 || prevLayer < 1) return;
+  const pred = (layerStart[newLayer] ?? data.total) - (layerStart[prevLayer] ?? 0);
+  const real = (now - live.layerAt - live.pausedMs) / 1000 * ((live.st.spd_mag || 100) / 100);
+  if (pred < 1 || real < 1) return;
+  // 印表機大約每 2 秒才回報一次，單層的實際時間誤差大 → 用最近 6 層加總來算比較穩
+  (live.hist ||= []).push([pred, real]); if (live.hist.length > 6) live.hist.shift();
+  const sp = live.hist.reduce((a, h) => a + h[0], 0), sr = live.hist.reduce((a, h) => a + h[1], 0);
+  live.rate = Math.min(3, Math.max(0.33, sp / sr));
+}   // stepIdx：實際走到準備清單第幾步；seen：實際出現過的步驟
 // 進度 % → 時間：切片軟體在 G-code 裡寫的 M73 P 點（準備階段印表機也會照這個回報 mc_percent）
 function pctTime(p) { for (const [idx, P] of data.anchors) if (P >= p) return data.moves[Math.min(idx, data.moves.length - 1)].t0; return data.total; }
 function liveStep(code) {   // 依實際回報的 stg_cur 往前推進準備清單（只往前，不往回）
@@ -1563,7 +1575,14 @@ function onLiveStatus(s) {
   const p = live.st, now = performance.now();
   const ln = +p.mc_print_line_number || 0;
   if (data && ln > 0 && ln !== live.lastLine) { live.lastLine = ln; const m = data.moves[lineToMove(ln - 1)]; live.ref = { t: m.t0, at: now }; }
-  if (p.layer_num !== live.layer) { live.layer = p.layer_num; live.layerAt = now; }
+  if (p.layer_num !== live.layer) {
+    calibrate(live.layer, p.layer_num, now);
+    // 只有親眼看到換層，這層的開始時間才準，下一次才拿來校正
+    live.layerSeen = live.layer >= 0; live.layer = p.layer_num; live.layerAt = now; live.pausedMs = 0;
+  }
+  // 暫停的時間不算進這層
+  if (p.gcode_state === 'PAUSE') { if (!live.pauseAt) live.pauseAt = now; }
+  else if (live.pauseAt) { live.pausedMs += now - live.pauseAt; live.pauseAt = 0; }
   // 準備步驟：用後端記下的歷史依序推進（重新整理頁面也接得上）
   if (data && s.stgHist && s.stgHist.length !== live.histLen) {
     live.seen = new Set(); live.stepIdx = -1;
@@ -1590,7 +1609,8 @@ function liveTarget() {
   const L = p.layer_num || 0;
   if (L > 0 && layerStart[L] !== undefined) {
     const s0 = layerStart[L], s1 = layerStart[L + 1] ?? data.total;
-    return Math.min(s1 - 0.05, s0 + (paused ? 0 : (now - live.layerAt) / 1000 * spd));
+    const el = ((live.pauseAt || now) - live.layerAt - live.pausedMs) / 1000;
+    return Math.min(s1 - 0.05, s0 + el * spd * live.rate);
   }
   // 準備階段：用目前步驟（stg_cur）和進度 %（M73 點）一起夾出範圍，再依經過時間往前推
   const prep = data.segments.filter(q => q.code !== 0), seg = prep[live.stepIdx];
@@ -1612,6 +1632,7 @@ function liveHUD(m) {
   $('pN').textContent = `${Math.round(p.nozzle_temper ?? 0)}/${Math.round(p.nozzle_target_temper ?? 0)}°`;
   $('pB').textContent = `${Math.round(p.bed_temper ?? 0)}/${Math.round(p.bed_target_temper ?? 0)}°`;
   $('pS').textContent = `${p.spd_mag ?? 100}%`;
+  $('pS').title = `推算速度已校正為預估的 ${live.rate.toFixed(2)} 倍`;
   if (!live.follow) return;   // 拖回去看的時候，上方進度維持顯示畫面上的時間
   // 進度、剩餘時間用印表機自己的數字
   const pct = (p.mc_percent ?? 0) / 100, rem = (p.mc_remaining_time ?? 0) * 60;
@@ -1640,7 +1661,7 @@ async function startLive() {
   es.addEventListener('status', e => onLiveStatus(JSON.parse(e.data)));
   es.addEventListener('file', async e => {
     const f = JSON.parse(e.data); if (f.url === live.fileUrl) return;
-    live.fileUrl = f.url; live.stepIdx = -1; live.seen = new Set(); live.stage = -1; live.pct = -1; live.histLen = -1;
+    live.fileUrl = f.url; live.stepIdx = -1; live.seen = new Set(); live.stage = -1; live.pct = -1; live.histLen = -1; live.rate = 1; live.layerSeen = false; live.hist = [];
     try { const buf = await (await fetch(f.url)).arrayBuffer(); await openBuffer(buf, f.name); live.ref = null; live.lastLine = -1; setLiveFollow(true); }
     catch (err) { console.error('讀不了印表機的檔案', err); }
   });
